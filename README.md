@@ -25,7 +25,8 @@ Individual steps (`PROFILES="subset"` limits any step to one profile):
 ```bash
 make download     # raw sources -> dataset/ (idempotent; records the source used per season)
 make dataset      # clean lap table + features
-make train        # baseline curve, polynomial ridge, monotone gradient boosting
+make train        # baseline curve, polynomial ridge, monotone gradient boosting (+ quantile
+                  # companions for 80% intervals), LSTM encoder-decoder (+ GRU twin, CPU torch)
 make evaluate     # val 2024 (model selection), test 2025 (scored once), LORO-CV, sensitivity
 make export       # artifacts/<profile>/ + artifacts/metrics.json (profiles side by side)
 make report       # execute ml/notebooks/01-05 -> reports/*.html
@@ -54,6 +55,17 @@ Each season's actual sources are recorded in `dataset/raw/sources.json` and in e
 - Tyre data for 2018 onwards is tried in this order: FastF1, then OpenF1 (2023+), then a Kaggle
   FastF1 export (`aryagowda121/summary-of-f1-telemetrydata-2018-2022`).
 - F1DB is optional: `boxbox download --with-f1db`.
+
+## Models
+
+Four selectable models predict relative lap pace: a baseline degradation curve, polynomial ridge,
+monotone gradient boosting and an LSTM encoder–decoder over the driver's lap history (`models.lstm`
+in `configs/default.yaml`; PyTorch CPU wheel pinned in `requirements.txt`). The LSTM decodes up to
+20 future laps; later laps follow the within-stint tyre prior and count as extrapolated. A GRU twin
+is trained only for the `sequence_cell_comparison` metrics block. Gradient boosting gets 80%
+intervals from quantile companions (`hgb_quantile.joblib`); the others use ±1.28σ of validation
+errors. `eval/metrics.json` also holds `interval_coverage`, `sequence_training` and
+`pit_timing_by_model`.
 
 ## Configuration
 
