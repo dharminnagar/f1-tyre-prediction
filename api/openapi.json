@@ -1,0 +1,2967 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BoxBox API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Health",
+        "description": "Liveness plus the loaded artifact versions.",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profiles": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Profiles",
+        "description": "Loaded training profiles (subset = 2019-23 train, full = 2005-23 train).",
+        "operationId": "profiles_api_profiles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProfileInfo"
+                  },
+                  "type": "array",
+                  "title": "Response Profiles Api Profiles Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/races": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Races",
+        "description": "Races with observed tyre data, newest first.",
+        "operationId": "races_api_races_get",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RaceSummary"
+                  },
+                  "title": "Response Races Api Races Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/races/{race_id}/drivers": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Drivers",
+        "description": "Drivers of a race with their stints.",
+        "operationId": "drivers_api_races__race_id__drivers_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DriverSummary"
+                  },
+                  "title": "Response Drivers Api Races  Race Id  Drivers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/races/{race_id}/drivers/{driver_id}/laps": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Laps",
+        "description": "Every lap of a driver with stint, cleaning and degradation state.",
+        "operationId": "laps_api_races__race_id__drivers__driver_id__laps_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "driver_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LapRecord"
+                  },
+                  "title": "Response Laps Api Races  Race Id  Drivers  Driver Id  Laps Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Models",
+        "description": "Models with features, held-out MAE and interpretable parameters.",
+        "operationId": "models_api_models_get",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelInfo"
+                  },
+                  "title": "Response Models Api Models Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/state": {
+      "get": {
+        "tags": [
+          "state"
+        ],
+        "summary": "State",
+        "description": "Degradation, next-lap/next-5 forecast, remaining competitive laps and why.",
+        "operationId": "state_api_state_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "driver_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          },
+          {
+            "name": "lap",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Lap"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "baseline_curve",
+                    "poly_ridge",
+                    "hgb"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "defaults to the selected model",
+              "title": "Model"
+            },
+            "description": "defaults to the selected model"
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TyreState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategy/pit-window": {
+      "post": {
+        "tags": [
+          "strategy"
+        ],
+        "summary": "Pit Window Route",
+        "description": "Stay-out vs pit cost per candidate lap and the window beyond model uncertainty.",
+        "operationId": "pit_window_route_api_strategy_pit_window_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PitWindowRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PitWindowResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategy/counterfactual": {
+      "post": {
+        "tags": [
+          "strategy"
+        ],
+        "summary": "Counterfactual Route",
+        "description": "Lap-by-lap stay-out vs pit-at-lap trajectories and the cumulative delta.",
+        "operationId": "counterfactual_route_api_strategy_counterfactual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CounterfactualRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CounterfactualResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluation/metrics": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Metrics",
+        "description": "Metrics of every loaded profile side by side (same val/test races).",
+        "operationId": "metrics_api_evaluation_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluation/predictions": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Predictions",
+        "description": "One-step-ahead predictions vs actual lap times for one stint.",
+        "operationId": "predictions_api_evaluation_predictions_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "driver_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          },
+          {
+            "name": "stint_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Stint Id"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "baseline_curve",
+                    "poly_ridge",
+                    "hgb"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "defaults to the selected model",
+              "title": "Model"
+            },
+            "description": "defaults to the selected model"
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PredictionRow"
+                  },
+                  "title": "Response Predictions Api Evaluation Predictions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluation/errors": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Errors",
+        "description": "Absolute next-lap error quantiles on held-out races by group.",
+        "operationId": "errors_api_evaluation_errors_get",
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "compound",
+                "race",
+                "stint_length"
+              ],
+              "type": "string",
+              "default": "compound",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "baseline_curve",
+                    "poly_ridge",
+                    "hgb"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "defaults to the selected model",
+              "title": "Model"
+            },
+            "description": "defaults to the selected model"
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ErrorGroupRow"
+                  },
+                  "title": "Response Errors Api Evaluation Errors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluation/threshold-sensitivity": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Threshold Sensitivity",
+        "description": "Remaining-life MAE (laps) for each competitive threshold and model.",
+        "operationId": "threshold_sensitivity_api_evaluation_threshold_sensitivity_get",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ThresholdRow"
+                  },
+                  "title": "Response Threshold Sensitivity Api Evaluation Threshold Sensitivity Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/evaluation/pit-timing": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Pit Timing",
+        "description": "Descriptive comparison of windows with the actual pit laps (not proof of optimality).",
+        "operationId": "pit_timing_api_evaluation_pit_timing_get",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PitTimingRow"
+                  },
+                  "title": "Response Pit Timing Api Evaluation Pit Timing Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/degradation/curves": {
+      "get": {
+        "tags": [
+          "evaluation"
+        ],
+        "summary": "Degradation Curves",
+        "description": "Median/IQR relative pace by tyre age with the selected model's fitted curve.",
+        "operationId": "degradation_curves_api_degradation_curves_get",
+        "parameters": [
+          {
+            "name": "compound",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "SOFT",
+                    "MEDIUM",
+                    "HARD"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Compound"
+            }
+          },
+          {
+            "name": "race_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "'all' = training races",
+              "default": "all",
+              "title": "Race Id"
+            },
+            "description": "'all' = training races"
+          },
+          {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "subset",
+                    "full"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "subset | full (default profile)",
+              "title": "Profile"
+            },
+            "description": "subset | full (default profile)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CurvePoint"
+                  },
+                  "title": "Response Degradation Curves Api Degradation Curves Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AblationRow": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "mae": {
+            "type": "number",
+            "title": "Mae"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "split",
+          "mae",
+          "n"
+        ],
+        "title": "AblationRow"
+      },
+      "Assumptions": {
+        "properties": {
+          "pit_loss_s": {
+            "type": "number",
+            "title": "Pit Loss S"
+          },
+          "pit_loss_source": {
+            "type": "string",
+            "enum": [
+              "estimated",
+              "override"
+            ],
+            "title": "Pit Loss Source"
+          },
+          "warmup_s": {
+            "type": "number",
+            "title": "Warmup S"
+          },
+          "fuel_s_per_lap": {
+            "type": "number",
+            "title": "Fuel S Per Lap"
+          },
+          "margin_sigma": {
+            "type": "number",
+            "title": "Margin Sigma"
+          },
+          "threshold_s": {
+            "type": "number",
+            "title": "Threshold S"
+          },
+          "reference_tyre_age": {
+            "type": "integer",
+            "title": "Reference Tyre Age"
+          },
+          "replacement_rule": {
+            "type": "string",
+            "title": "Replacement Rule"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pit_loss_s",
+          "pit_loss_source",
+          "warmup_s",
+          "fuel_s_per_lap",
+          "margin_sigma",
+          "threshold_s",
+          "reference_tyre_age",
+          "replacement_rule"
+        ],
+        "title": "Assumptions"
+      },
+      "CounterfactualRequest": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "title": "Race Id"
+          },
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "lap": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Lap"
+          },
+          "pit_lap": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Pit Lap"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "baseline_curve",
+                  "poly_ridge",
+                  "hgb"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "subset",
+                  "full"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "replacement_compound": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "SOFT",
+                  "MEDIUM",
+                  "HARD"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Compound"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "race_id",
+          "driver_id",
+          "lap",
+          "pit_lap"
+        ],
+        "title": "CounterfactualRequest"
+      },
+      "CounterfactualResponse": {
+        "properties": {
+          "laps": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Laps"
+          },
+          "stay_out": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Stay Out"
+          },
+          "pit": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Pit"
+          },
+          "cumulative_delta_s": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Cumulative Delta S"
+          },
+          "actual": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Actual"
+          },
+          "replacement_compound": {
+            "type": "string",
+            "enum": [
+              "SOFT",
+              "MEDIUM",
+              "HARD"
+            ],
+            "title": "Replacement Compound"
+          },
+          "pit_loss_s": {
+            "type": "number",
+            "title": "Pit Loss S"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "laps",
+          "stay_out",
+          "pit",
+          "cumulative_delta_s",
+          "actual",
+          "replacement_compound",
+          "pit_loss_s"
+        ],
+        "title": "CounterfactualResponse"
+      },
+      "CumulativeStintRow": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "mean_abs_cumulative_s": {
+            "type": "number",
+            "title": "Mean Abs Cumulative S"
+          },
+          "mean_laps": {
+            "type": "number",
+            "title": "Mean Laps"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "split",
+          "mean_abs_cumulative_s",
+          "mean_laps",
+          "n"
+        ],
+        "title": "CumulativeStintRow"
+      },
+      "CurvePoint": {
+        "properties": {
+          "compound": {
+            "type": "string",
+            "enum": [
+              "SOFT",
+              "MEDIUM",
+              "HARD"
+            ],
+            "title": "Compound"
+          },
+          "tyre_age": {
+            "type": "number",
+            "title": "Tyre Age"
+          },
+          "median_s": {
+            "type": "number",
+            "title": "Median S"
+          },
+          "q25_s": {
+            "type": "number",
+            "title": "Q25 S"
+          },
+          "q75_s": {
+            "type": "number",
+            "title": "Q75 S"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "fitted_s": {
+            "type": "number",
+            "title": "Fitted S"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "compound",
+          "tyre_age",
+          "median_s",
+          "q25_s",
+          "q75_s",
+          "n",
+          "fitted_s"
+        ],
+        "title": "CurvePoint"
+      },
+      "DecompositionOut": {
+        "properties": {
+          "field_ref_s": {
+            "type": "number",
+            "title": "Field Ref S"
+          },
+          "driver_offset_s": {
+            "type": "number",
+            "title": "Driver Offset S"
+          },
+          "tyre_s": {
+            "type": "number",
+            "title": "Tyre S"
+          },
+          "fuel_s": {
+            "type": "number",
+            "title": "Fuel S"
+          },
+          "context_s": {
+            "type": "number",
+            "title": "Context S"
+          },
+          "total_s": {
+            "type": "number",
+            "title": "Total S"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field_ref_s",
+          "driver_offset_s",
+          "tyre_s",
+          "fuel_s",
+          "context_s",
+          "total_s"
+        ],
+        "title": "DecompositionOut"
+      },
+      "Degradation": {
+        "properties": {
+          "empirical_s_per_lap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empirical S Per Lap"
+          },
+          "model_s_per_lap": {
+            "type": "number",
+            "title": "Model S Per Lap"
+          },
+          "acceleration_s_per_lap2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acceleration S Per Lap2"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "empirical_s_per_lap",
+          "model_s_per_lap",
+          "acceleration_s_per_lap2"
+        ],
+        "title": "Degradation"
+      },
+      "DriverSummary": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "team": {
+            "type": "string",
+            "title": "Team"
+          },
+          "stints": {
+            "items": {
+              "$ref": "#/components/schemas/StintSummary"
+            },
+            "type": "array",
+            "title": "Stints"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "driver_id",
+          "code",
+          "name",
+          "constructor_id",
+          "team",
+          "stints"
+        ],
+        "title": "DriverSummary"
+      },
+      "ErrorGroupRow": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "q10_s": {
+            "type": "number",
+            "title": "Q10 S"
+          },
+          "q25_s": {
+            "type": "number",
+            "title": "Q25 S"
+          },
+          "q50_s": {
+            "type": "number",
+            "title": "Q50 S"
+          },
+          "q75_s": {
+            "type": "number",
+            "title": "Q75 S"
+          },
+          "q90_s": {
+            "type": "number",
+            "title": "Q90 S"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group",
+          "q10_s",
+          "q25_s",
+          "q50_s",
+          "q75_s",
+          "q90_s",
+          "n"
+        ],
+        "title": "ErrorGroupRow"
+      },
+      "FuelSensitivityRow": {
+        "properties": {
+          "fuel_s_per_lap": {
+            "type": "number",
+            "title": "Fuel S Per Lap"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "mae": {
+            "type": "number",
+            "title": "Mae"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fuel_s_per_lap",
+          "model",
+          "split",
+          "mae"
+        ],
+        "title": "FuelSensitivityRow"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          },
+          "artifacts_version": {
+            "type": "string",
+            "title": "Artifacts Version"
+          },
+          "profiles": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "subset",
+                "full"
+              ]
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "default_profile": {
+            "type": "string",
+            "enum": [
+              "subset",
+              "full"
+            ],
+            "title": "Default Profile"
+          },
+          "selected_model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Selected Model"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "artifacts_version",
+          "profiles",
+          "default_profile",
+          "selected_model"
+        ],
+        "title": "Health"
+      },
+      "HorizonRow": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "k": {
+            "type": "integer",
+            "title": "K"
+          },
+          "mae": {
+            "type": "number",
+            "title": "Mae"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "split",
+          "k",
+          "mae",
+          "n"
+        ],
+        "title": "HorizonRow"
+      },
+      "Interval": {
+        "properties": {
+          "lap": {
+            "type": "integer",
+            "title": "Lap"
+          },
+          "pred_s": {
+            "type": "number",
+            "title": "Pred S"
+          },
+          "lo_s": {
+            "type": "number",
+            "title": "Lo S"
+          },
+          "hi_s": {
+            "type": "number",
+            "title": "Hi S"
+          },
+          "extrapolated": {
+            "type": "boolean",
+            "title": "Extrapolated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lap",
+          "pred_s",
+          "lo_s",
+          "hi_s",
+          "extrapolated"
+        ],
+        "title": "Interval"
+      },
+      "LapRecord": {
+        "properties": {
+          "lap": {
+            "type": "integer",
+            "title": "Lap"
+          },
+          "lap_time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Time S"
+          },
+          "lap_fc_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Fc S"
+          },
+          "compound": {
+            "type": "string",
+            "title": "Compound"
+          },
+          "tyre_age": {
+            "type": "number",
+            "title": "Tyre Age"
+          },
+          "stint_id": {
+            "type": "integer",
+            "title": "Stint Id"
+          },
+          "stint_lap": {
+            "type": "integer",
+            "title": "Stint Lap"
+          },
+          "is_clean": {
+            "type": "boolean",
+            "title": "Is Clean"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
+          },
+          "deg_slope_5": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deg Slope 5"
+          },
+          "deg_accel": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deg Accel"
+          },
+          "track_status": {
+            "type": "string",
+            "title": "Track Status"
+          },
+          "pit_in": {
+            "type": "boolean",
+            "title": "Pit In"
+          },
+          "pit_out": {
+            "type": "boolean",
+            "title": "Pit Out"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lap",
+          "lap_time_s",
+          "lap_fc_s",
+          "compound",
+          "tyre_age",
+          "stint_id",
+          "stint_lap",
+          "is_clean",
+          "exclusion_reason",
+          "deg_slope_5",
+          "deg_accel",
+          "track_status",
+          "pit_in",
+          "pit_out",
+          "position"
+        ],
+        "title": "LapRecord"
+      },
+      "LapWindow": {
+        "properties": {
+          "start_lap": {
+            "type": "integer",
+            "title": "Start Lap"
+          },
+          "end_lap": {
+            "type": "integer",
+            "title": "End Lap"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start_lap",
+          "end_lap"
+        ],
+        "title": "LapWindow"
+      },
+      "LoroRow": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "race_id": {
+            "type": "string",
+            "title": "Race Id"
+          },
+          "mae": {
+            "type": "number",
+            "title": "Mae"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "race_id",
+          "mae",
+          "n"
+        ],
+        "title": "LoroRow"
+      },
+      "LoroSummary": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "mean": {
+            "type": "number",
+            "title": "Mean"
+          },
+          "std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Std"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "mean",
+          "std"
+        ],
+        "title": "LoroSummary"
+      },
+      "MetricRow": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "next_lap",
+              "next_5_mean",
+              "next_3_mean"
+            ],
+            "title": "Target"
+          },
+          "mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mae"
+          },
+          "rmse": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rmse"
+          },
+          "r2": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R2"
+          },
+          "mape": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mape"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "split",
+          "target",
+          "mae",
+          "rmse",
+          "r2",
+          "mape",
+          "n"
+        ],
+        "title": "MetricRow"
+      },
+      "MetricsResponse": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileMetrics"
+            },
+            "type": "array",
+            "title": "Profiles"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profiles"
+        ],
+        "title": "MetricsResponse"
+      },
+      "ModelInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Name"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "selected": {
+            "type": "boolean",
+            "title": "Selected"
+          },
+          "coefficients": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coefficients"
+          },
+          "importances": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importances"
+          },
+          "val_mae_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val Mae S"
+          },
+          "test_mae_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Mae S"
+          },
+          "tyre_age_cap": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Tyre Age Cap"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "features",
+          "selected",
+          "coefficients",
+          "importances",
+          "val_mae_s",
+          "test_mae_s",
+          "tyre_age_cap"
+        ],
+        "title": "ModelInfo"
+      },
+      "PitCandidateOut": {
+        "properties": {
+          "pit_lap": {
+            "type": "integer",
+            "title": "Pit Lap"
+          },
+          "cost_pit_s": {
+            "type": "number",
+            "title": "Cost Pit S"
+          },
+          "cost_stay_out_s": {
+            "type": "number",
+            "title": "Cost Stay Out S"
+          },
+          "advantage_s": {
+            "type": "number",
+            "title": "Advantage S"
+          },
+          "margin_s": {
+            "type": "number",
+            "title": "Margin S"
+          },
+          "in_window": {
+            "type": "boolean",
+            "title": "In Window"
+          },
+          "extrapolated": {
+            "type": "boolean",
+            "title": "Extrapolated"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "pit_lap",
+          "cost_pit_s",
+          "cost_stay_out_s",
+          "advantage_s",
+          "margin_s",
+          "in_window",
+          "extrapolated"
+        ],
+        "title": "PitCandidateOut"
+      },
+      "PitLossOut": {
+        "properties": {
+          "median_s": {
+            "type": "number",
+            "title": "Median S"
+          },
+          "q25_s": {
+            "type": "number",
+            "title": "Q25 S"
+          },
+          "q75_s": {
+            "type": "number",
+            "title": "Q75 S"
+          },
+          "n_stops": {
+            "type": "integer",
+            "title": "N Stops"
+          },
+          "races": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Races"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "median_s",
+          "q25_s",
+          "q75_s",
+          "n_stops",
+          "races"
+        ],
+        "title": "PitLossOut"
+      },
+      "PitTimingRow": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "title": "Race Id"
+          },
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "stint_id": {
+            "type": "integer",
+            "title": "Stint Id"
+          },
+          "decision_lap": {
+            "type": "integer",
+            "title": "Decision Lap"
+          },
+          "actual_pit_lap": {
+            "type": "integer",
+            "title": "Actual Pit Lap"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "optimal_lap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimal Lap"
+          },
+          "actual_in_window": {
+            "type": "boolean",
+            "title": "Actual In Window"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "race_id",
+          "driver_id",
+          "stint_id",
+          "decision_lap",
+          "actual_pit_lap",
+          "window_start",
+          "window_end",
+          "optimal_lap",
+          "actual_in_window"
+        ],
+        "title": "PitTimingRow"
+      },
+      "PitWindowRequest": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "title": "Race Id"
+          },
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "lap": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Lap"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "baseline_curve",
+                  "poly_ridge",
+                  "hgb"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "subset",
+                  "full"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "replacement_compound": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "SOFT",
+                  "MEDIUM",
+                  "HARD"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Compound"
+          },
+          "threshold_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 5.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold S"
+          },
+          "pit_loss_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 60.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pit Loss S"
+          },
+          "warmup_s": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 5.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warmup S"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "race_id",
+          "driver_id",
+          "lap"
+        ],
+        "title": "PitWindowRequest"
+      },
+      "PitWindowResponse": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PitCandidateOut"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LapWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "optimal_lap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimal Lap"
+          },
+          "stay_out_feasible": {
+            "type": "boolean",
+            "title": "Stay Out Feasible"
+          },
+          "replacement_compound": {
+            "type": "string",
+            "enum": [
+              "SOFT",
+              "MEDIUM",
+              "HARD"
+            ],
+            "title": "Replacement Compound"
+          },
+          "pit_loss_s": {
+            "type": "number",
+            "title": "Pit Loss S"
+          },
+          "actual_pit_laps": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Actual Pit Laps"
+          },
+          "assumptions": {
+            "$ref": "#/components/schemas/Assumptions"
+          },
+          "explanation": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Explanation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "candidates",
+          "window",
+          "optimal_lap",
+          "stay_out_feasible",
+          "replacement_compound",
+          "pit_loss_s",
+          "actual_pit_laps",
+          "assumptions",
+          "explanation"
+        ],
+        "title": "PitWindowResponse"
+      },
+      "PredictionRow": {
+        "properties": {
+          "lap": {
+            "type": "integer",
+            "title": "Lap"
+          },
+          "actual_s": {
+            "type": "number",
+            "title": "Actual S"
+          },
+          "pred_s": {
+            "type": "number",
+            "title": "Pred S"
+          },
+          "lo_s": {
+            "type": "number",
+            "title": "Lo S"
+          },
+          "hi_s": {
+            "type": "number",
+            "title": "Hi S"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lap",
+          "actual_s",
+          "pred_s",
+          "lo_s",
+          "hi_s",
+          "split"
+        ],
+        "title": "PredictionRow"
+      },
+      "ProfileInfo": {
+        "properties": {
+          "profile": {
+            "type": "string",
+            "enum": [
+              "subset",
+              "full"
+            ],
+            "title": "Profile"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
+          },
+          "dataset_hash": {
+            "type": "string",
+            "title": "Dataset Hash"
+          },
+          "selected_model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Selected Model"
+          },
+          "train_seasons": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Train Seasons"
+          },
+          "val_seasons": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Val Seasons"
+          },
+          "test_seasons": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Test Seasons"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "created_at",
+          "config_hash",
+          "dataset_hash",
+          "selected_model",
+          "train_seasons",
+          "val_seasons",
+          "test_seasons",
+          "is_default"
+        ],
+        "title": "ProfileInfo"
+      },
+      "ProfileMetrics": {
+        "properties": {
+          "profile": {
+            "type": "string",
+            "enum": [
+              "subset",
+              "full"
+            ],
+            "title": "Profile"
+          },
+          "selected_model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Selected Model"
+          },
+          "selection_rule": {
+            "type": "string",
+            "title": "Selection Rule"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricRow"
+            },
+            "type": "array",
+            "title": "Metrics"
+          },
+          "horizon": {
+            "items": {
+              "$ref": "#/components/schemas/HorizonRow"
+            },
+            "type": "array",
+            "title": "Horizon"
+          },
+          "loro_cv": {
+            "items": {
+              "$ref": "#/components/schemas/LoroRow"
+            },
+            "type": "array",
+            "title": "Loro Cv"
+          },
+          "loro_cv_summary": {
+            "items": {
+              "$ref": "#/components/schemas/LoroSummary"
+            },
+            "type": "array",
+            "title": "Loro Cv Summary"
+          },
+          "cumulative_stint": {
+            "items": {
+              "$ref": "#/components/schemas/CumulativeStintRow"
+            },
+            "type": "array",
+            "title": "Cumulative Stint"
+          },
+          "ablation_deg_features": {
+            "items": {
+              "$ref": "#/components/schemas/AblationRow"
+            },
+            "type": "array",
+            "title": "Ablation Deg Features"
+          },
+          "fuel_sensitivity": {
+            "items": {
+              "$ref": "#/components/schemas/FuelSensitivityRow"
+            },
+            "type": "array",
+            "title": "Fuel Sensitivity"
+          },
+          "pit_loss": {
+            "$ref": "#/components/schemas/PitLossOut"
+          },
+          "stint_verification": {
+            "$ref": "#/components/schemas/StintVerificationOut"
+          },
+          "pit_timing_in_window_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pit Timing In Window Rate"
+          },
+          "train_races": {
+            "type": "integer",
+            "title": "Train Races"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "selected_model",
+          "selection_rule",
+          "metrics",
+          "horizon",
+          "loro_cv",
+          "loro_cv_summary",
+          "cumulative_stint",
+          "ablation_deg_features",
+          "fuel_sensitivity",
+          "pit_loss",
+          "stint_verification",
+          "pit_timing_in_window_rate",
+          "train_races"
+        ],
+        "title": "ProfileMetrics"
+      },
+      "RaceSummary": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "title": "Race Id"
+          },
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "circuit": {
+            "type": "string",
+            "title": "Circuit"
+          },
+          "total_laps": {
+            "type": "integer",
+            "title": "Total Laps"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "tyre_source": {
+            "type": "string",
+            "title": "Tyre Source"
+          },
+          "tables_source": {
+            "type": "string",
+            "title": "Tables Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "race_id",
+          "season",
+          "round",
+          "name",
+          "circuit",
+          "total_laps",
+          "split",
+          "tyre_source",
+          "tables_source"
+        ],
+        "title": "RaceSummary"
+      },
+      "RemainingLifeOut": {
+        "properties": {
+          "value": {
+            "type": "integer",
+            "title": "Value"
+          },
+          "threshold_s": {
+            "type": "number",
+            "title": "Threshold S"
+          },
+          "reference_s": {
+            "type": "number",
+            "title": "Reference S"
+          },
+          "capped_by_race_end": {
+            "type": "boolean",
+            "title": "Capped By Race End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "threshold_s",
+          "reference_s",
+          "capped_by_race_end"
+        ],
+        "title": "RemainingLifeOut"
+      },
+      "StintSummary": {
+        "properties": {
+          "stint_id": {
+            "type": "integer",
+            "title": "Stint Id"
+          },
+          "compound": {
+            "type": "string",
+            "enum": [
+              "SOFT",
+              "MEDIUM",
+              "HARD"
+            ],
+            "title": "Compound"
+          },
+          "start_lap": {
+            "type": "integer",
+            "title": "Start Lap"
+          },
+          "end_lap": {
+            "type": "integer",
+            "title": "End Lap"
+          },
+          "stint_source": {
+            "type": "string",
+            "title": "Stint Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stint_id",
+          "compound",
+          "start_lap",
+          "end_lap",
+          "stint_source"
+        ],
+        "title": "StintSummary"
+      },
+      "StintVerificationOut": {
+        "properties": {
+          "match_rate": {
+            "type": "number",
+            "title": "Match Rate"
+          },
+          "n_stops": {
+            "type": "integer",
+            "title": "N Stops"
+          },
+          "by_race": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "By Race"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "match_rate",
+          "n_stops",
+          "by_race"
+        ],
+        "title": "StintVerificationOut"
+      },
+      "ThresholdRow": {
+        "properties": {
+          "threshold_s": {
+            "type": "number",
+            "title": "Threshold S"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "mae_laps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mae Laps"
+          },
+          "n_uncensored": {
+            "type": "integer",
+            "title": "N Uncensored"
+          },
+          "n_total": {
+            "type": "integer",
+            "title": "N Total"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "threshold_s",
+          "model",
+          "mae_laps",
+          "n_uncensored",
+          "n_total"
+        ],
+        "title": "ThresholdRow"
+      },
+      "TyreState": {
+        "properties": {
+          "race_id": {
+            "type": "string",
+            "title": "Race Id"
+          },
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "lap": {
+            "type": "integer",
+            "title": "Lap"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb"
+            ],
+            "title": "Model"
+          },
+          "compound": {
+            "type": "string",
+            "enum": [
+              "SOFT",
+              "MEDIUM",
+              "HARD"
+            ],
+            "title": "Compound"
+          },
+          "tyre_age": {
+            "type": "number",
+            "title": "Tyre Age"
+          },
+          "stint_id": {
+            "type": "integer",
+            "title": "Stint Id"
+          },
+          "stint_lap": {
+            "type": "integer",
+            "title": "Stint Lap"
+          },
+          "degradation": {
+            "$ref": "#/components/schemas/Degradation"
+          },
+          "next_lap": {
+            "$ref": "#/components/schemas/Interval"
+          },
+          "next_laps": {
+            "items": {
+              "$ref": "#/components/schemas/Interval"
+            },
+            "type": "array",
+            "title": "Next Laps"
+          },
+          "remaining_competitive_laps": {
+            "$ref": "#/components/schemas/RemainingLifeOut"
+          },
+          "decomposition": {
+            "$ref": "#/components/schemas/DecompositionOut"
+          },
+          "explanation": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Explanation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "race_id",
+          "driver_id",
+          "lap",
+          "model",
+          "compound",
+          "tyre_age",
+          "stint_id",
+          "stint_lap",
+          "degradation",
+          "next_lap",
+          "next_laps",
+          "remaining_competitive_laps",
+          "decomposition",
+          "explanation"
+        ],
+        "title": "TyreState"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

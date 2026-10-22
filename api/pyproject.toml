@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boxbox-api"
+version = "0.1.0"
+description = "HTTP API over BoxBox artifacts"
+requires-python = ">=3.12"
+dependencies = ["boxbox", "fastapi>=0.115", "uvicorn[standard]", "pydantic-settings>=2.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+boxbox_api = ["py.typed"]
