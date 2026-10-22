@@ -5,10 +5,10 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from boxbox.models.types import PaceModel, predict_pace
+from boxbox.models.forecaster import Forecaster
 from boxbox.strategy.pit_window import PitWindowResult
 from boxbox.strategy.remaining_life import RemainingLife
-from boxbox.strategy.rollout import fuel_terms, stay_out_design
+from boxbox.strategy.rollout import fuel_terms, predict_segments, stay_out_design
 
 
 @dataclass(frozen=True)
@@ -31,14 +31,14 @@ class Decomposition:
 
 
 def decompose_next_lap(
-    model: PaceModel, state: pd.Series, reference_age: int, fuel_s_per_lap: float
+    model: Forecaster, state: pd.Series, reference_age: int, fuel_s_per_lap: float
 ) -> Decomposition:
     """Decompose the next-lap prediction of ``model`` at the decision ``state``."""
     design = stay_out_design(state, int(state["lap"]) + 1)
     reference = design.assign(tyre_age=float(reference_age), stint_lap=float(reference_age))
     neutral_driver = reference.assign(driver_offset_s=0.0, quali_gap_s=0.0)
     full, at_ref, neutral = (
-        float(predict_pace(model, d)[0]) for d in (design, reference, neutral_driver)
+        float(p.y_s[0]) for p in predict_segments(model, state, [design, reference, neutral_driver])
     )
     laps = design["lap_number"].to_numpy(dtype=np.int64)
     return Decomposition(

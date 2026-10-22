@@ -34,12 +34,16 @@ class SigmaCurve:
         return float(self.power_a * k**self.power_b)
 
 
-def fit_sigma_curve(errors: pd.DataFrame, min_samples: int = 20) -> SigmaCurve:
-    """Fit from rollout errors with columns ``decision_id``, ``k`` and ``error_s``.
+def fit_sigma_curve(
+    errors: pd.DataFrame, min_samples: int = 20, error_col: str = "error_s"
+) -> SigmaCurve:
+    """Fit from rollout errors with columns ``decision_id``, ``k`` and ``error_col``.
 
-    Cumulative errors only use decisions whose first k laps were all evaluable.
+    Cumulative errors only use decisions whose first k laps were all evaluable. Pass
+    ``error_col="paired_error_s"`` for the spread of cost *differences* between strategy
+    branches of the same stint (the shared per-stint level error cancels there).
     """
-    ordered = errors.sort_values(["decision_id", "k"])
+    ordered = errors.sort_values(["decision_id", "k"]).assign(error_s=errors[error_col])
     ordered = ordered.assign(cum=ordered.groupby("decision_id")["error_s"].cumsum())
     contiguous = ordered.groupby("decision_id")["k"].transform(
         lambda s: s.to_numpy() == np.arange(1, len(s) + 1)
