@@ -107,7 +107,10 @@ def evaluate(profile: ProfileOption = "subset") -> None:
             typer.echo(
                 f"{row['model']:>15} {row['split']:>4} {row['target']:>12} MAE {row['mae']:.3f}"
             )
-    typer.echo(f"selected: {result.selected_model}; pit loss {result.pit_loss.median_s:.2f} s")
+    typer.echo(
+        f"selected: {result.selected_model}; strategy: {result.strategy_selected_model}; "
+        f"pit loss {result.pit_loss.median_s:.2f} s"
+    )
 
 
 @app.command()

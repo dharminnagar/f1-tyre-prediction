@@ -11,8 +11,10 @@ import numpy as np
 import pandas as pd
 
 from boxbox.config import PROFILES, Config
-from boxbox.evaluation.evaluate import EvaluationResult
+from boxbox.evaluation.evaluate import EvaluationResult, lowest_val_mae
 from boxbox.ingestion.download import season_sources
+from boxbox.models.lstm import META_FILE, WEIGHTS_FILE, TrainedLstm, save_lstm
+from boxbox.models.sequence_data import FUTURE_FEATURES, HISTORY_FEATURES
 from boxbox.models.types import PaceModel, predict_pace
 from boxbox.paths import ArtifactPaths, artifact_paths
 from boxbox.preprocessing.build import LapDataset, dataset_hash
@@ -24,11 +26,12 @@ from boxbox.reporting.figures import (
     pit_loss_figure,
     pred_vs_actual_figure,
 )
-from boxbox.schema import DRY_COMPOUNDS
+from boxbox.schema import DRY_COMPOUNDS, ModelName
 from boxbox.strategy.pit_loss import stop_losses
 
 SCHEMA_VERSION: Final[str] = "1"
 MODEL_FILE_SUFFIX: Final[str] = ".joblib"
+HGB_QUANTILE_FILE: Final[str] = "hgb_quantile.joblib"
 
 
 def _json_safe(value: object) -> object:
@@ -72,6 +75,38 @@ def degradation_curves(features: pd.DataFrame, model: PaceModel) -> pd.DataFrame
             reference[column] = float(medians.get(column, 0.0))
     reference["driver_offset_s"] = 0.0
     return curves.assign(fitted_s=predict_pace(model, reference))
+
+
+def curve_model_name(evaluation: EvaluationResult) -> ModelName:
+    """Model whose fitted degradation curve is exported: the selected one if it is per-lap.
+
+    A sequence model cannot score isolated (compound, tyre age) rows, so when it is selected
+    the per-lap model with the lowest validation next-lap MAE draws the curve instead.
+    """
+    if evaluation.selected_model in evaluation.models.models:
+        return evaluation.selected_model
+    per_lap = [r for r in evaluation.metric_rows if r["model"] in evaluation.models.models]
+    return lowest_val_mae(per_lap, "next_lap")
+
+
+def lstm_entry(
+    model: TrainedLstm, evaluation: EvaluationResult, mae: dict[tuple[str, str], object]
+) -> dict[str, object]:
+    """Manifest model entry of the sequence model (``ModelInfo`` shape)."""
+    return {
+        "name": "lstm",
+        "features": [
+            *(f"history:{c}" for c in HISTORY_FEATURES),
+            *(f"future:{c}" for c in FUTURE_FEATURES),
+        ],
+        "selected": evaluation.selected_model == "lstm",
+        "selected_for_strategy": evaluation.strategy_selected_model == "lstm",
+        "val_mae_s": mae.get(("lstm", "val")),
+        "test_mae_s": mae.get(("lstm", "test")),
+        "coefficients": None,
+        "importances": None,
+        "tyre_age_cap": model.tyre_clip.max_age,
+    }
 
 
 def race_catalogue(laps: pd.DataFrame, cfg: Config) -> list[dict[str, object]]:
@@ -131,6 +166,7 @@ def export_all(
             "name": name,
             "features": list(model.features),
             "selected": name == evaluation.selected_model,
+            "selected_for_strategy": name == evaluation.strategy_selected_model,
             "val_mae_s": model_mae.get((name, "val")),
             "test_mae_s": model_mae.get((name, "test")),
             "coefficients": description if name == "poly_ridge" else None,
@@ -139,12 +175,19 @@ def export_all(
         }
         write_json(paths.models / f"{name}.meta.json", meta)
         model_entries.append(meta)
+    lstm = evaluation.models.lstm
+    if lstm is not None:
+        save_lstm(lstm, paths.models)
+        model_entries.append(lstm_entry(lstm, evaluation, model_mae))
+    quantile = evaluation.models.hgb_quantile
+    if quantile is not None:
+        joblib.dump(quantile, paths.models / HGB_QUANTILE_FILE)
 
     features.to_parquet(paths.data / "laps.parquet", index=False)
     dataset.pit_stops.to_parquet(paths.data / "pit_stops.parquet", index=False)
     dataset.stint_verification.to_parquet(paths.data / "stint_verification.parquet", index=False)
-    selected_model = evaluation.models.models[evaluation.selected_model]
-    curves = degradation_curves(features, selected_model)
+    curve_model = curve_model_name(evaluation)
+    curves = degradation_curves(features, evaluation.models.models[curve_model])
     curves.to_parquet(paths.data / "degradation_curves.parquet", index=False)
 
     write_json(paths.eval / "metrics.json", evaluation.summary)
@@ -180,11 +223,25 @@ def export_all(
         "dataset_hash": dataset_hash(dataset.laps),
         "selected_model": evaluation.selected_model,
         "selection_rule": "lowest validation next-lap MAE",
+        "strategy_selected_model": evaluation.strategy_selected_model,
+        "strategy_selection_rule": evaluation.summary["strategy_selection_rule"],
+        "curve_model": curve_model,
+        "sequence_model_files": [f"models/{WEIGHTS_FILE}", f"models/{META_FILE}"]
+        if lstm is not None
+        else [],
+        "hgb_quantile_file": f"models/{HGB_QUANTILE_FILE}" if quantile is not None else None,
+        "interval_coverage": evaluation.summary["interval_coverage"],
+        "sequence_cell_comparison": evaluation.summary["sequence_cell_comparison"],
         "splits": cfg.splits.model_dump(),
         "races": race_catalogue(features, cfg),
         "models": model_entries,
         "pit_loss": evaluation.pit_loss.__dict__ | {"races": evaluation.pit_loss_races},
         "sigma": evaluation.summary["sigma"],
+        "sigma_paired": evaluation.summary["sigma_paired"],
+        "calibrated_margin_sigma": evaluation.calibrated_margin_sigma,
+        "tyre_prior": evaluation.summary["tyre_prior"],
+        "rollout_slope": evaluation.summary["rollout_slope"],
+        "normalisation_sensitivity": evaluation.summary["normalisation_sensitivity"],
         "stint_verification": evaluation.summary["stint_verification"],
         "figures": [p.name for p in figure_paths],
         "files": sorted(
