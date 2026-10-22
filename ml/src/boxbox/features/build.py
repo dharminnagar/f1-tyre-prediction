@@ -15,7 +15,9 @@ from boxbox.features.pace import (
     fuel_corrected,
     quali_gap,
     relative_pace,
+    teammate_reference,
 )
+from boxbox.features.tyre_prior import TyrePrior, fit_training_prior
 from boxbox.schema import DRIVER_KEYS, STINT_KEYS
 
 DRIVER_STATE: Final[tuple[str, ...]] = (
@@ -44,6 +46,7 @@ DETERMINISTIC_NUMERIC: Final[tuple[str, ...]] = (
 CATEGORICAL: Final[tuple[str, ...]] = ("compound", "era")
 MAIN_NUMERIC: Final[tuple[str, ...]] = (*DETERMINISTIC_NUMERIC, *DRIVER_STATE)
 DEGRADATION_FEATURES: Final[tuple[str, ...]] = ("deg_slope_5", "deg_accel")
+_CONTEXT_STATE: Final[tuple[str, ...]] = tuple(n for n in DRIVER_STATE if n != "driver_offset_s")
 
 
 def _shift_state(df: pd.DataFrame) -> pd.DataFrame:
@@ -51,18 +54,48 @@ def _shift_state(df: pd.DataFrame) -> pd.DataFrame:
     ordered = df.sort_values([*DRIVER_KEYS, "lap"])
     by_driver = ordered.groupby(DRIVER_KEYS)
     by_stint = ordered.groupby(STINT_KEYS)
-    shifted = {name: by_driver[f"s_{name}"].shift(1) for name in DRIVER_STATE}
+    shifted = {name: by_driver[f"s_{name}"].shift(1) for name in _CONTEXT_STATE}
     shifted |= {name: by_stint[f"s_{name}"].shift(1) for name in STINT_STATE}
     previous_lap = by_driver["lap"].shift(1)
     return ordered.assign(**shifted, has_history=(previous_lap == ordered["lap"] - 1))
 
 
-def build_features(laps: pd.DataFrame, cfg: Config) -> pd.DataFrame:
-    """Full feature table (one row per driver-lap) with target ``y_s`` and ``split``."""
+def with_driver_offset(features: pd.DataFrame, prior: TyrePrior | None) -> pd.DataFrame:
+    """(Re)compute ``s_driver_offset_s`` and its lagged feature ``driver_offset_s``.
+
+    Used by :func:`build_features` and to refit the offset against a per-fold prior (LORO-CV).
+    """
+    df = driver_offset(features, prior)
+    lagged = df.groupby(DRIVER_KEYS)["s_driver_offset_s"].shift(1)
+    return (
+        df.assign(driver_offset_s=lagged)
+        .sort_values(["race_id", "driver_id", "lap"])
+        .reset_index(drop=True)
+    )
+
+
+def offset_prior(features: pd.DataFrame, cfg: Config) -> TyrePrior | None:
+    """The tyre prior the driver offset is adjusted with.
+
+    ``None`` (raw offset) for the ``raw`` ablation or when there are no training rows.
+    """
+    train = features[features["is_training_row"] & (features["split"] == "train")]
+    if cfg.driver_offset == "raw" or train.empty:
+        return None
+    return fit_training_prior(train, cfg.tyre_age_clip_quantile)
+
+
+def build_features(laps: pd.DataFrame, cfg: Config, prior: TyrePrior | None = None) -> pd.DataFrame:
+    """Full feature table (one row per driver-lap) with target ``y_s`` and ``split``.
+
+    The driver offset is tyre-adjusted with ``prior`` when given (tests pin it to keep the
+    table causal); otherwise with a prior fitted on the training rows (``cfg.driver_offset``).
+    """
     df = fuel_corrected(laps, cfg.fuel_s_per_lap)
     df = field_reference(df)
+    if cfg.normalisation == "teammate":
+        df = teammate_reference(df)
     df = relative_pace(df)
-    df = driver_offset(df)
     df = quali_gap(df)
     df = degradation_state(df)
     df = context_state(df)
@@ -70,7 +103,9 @@ def build_features(laps: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     df = _shift_state(df)
     df = assign_splits(df, cfg)
     df["is_training_row"] = df["is_clean"] & df["has_history"] & df["y_s"].notna()
-    return df.sort_values(["race_id", "driver_id", "lap"]).reset_index(drop=True)
+    if prior is None:
+        prior = offset_prior(df, cfg)
+    return with_driver_offset(df, prior)
 
 
 def rollout_design(
