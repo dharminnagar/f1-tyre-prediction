@@ -6,3 +6,6 @@ splits:
           2018, 2019, 2020, 2021, 2022, 2023]
   val: [2024]
   test: [2025]
+models:
+  # No fuel correction is possible in the refuelling era (2005-2009): its stints trend faster.
+  exclude_refuel_era_for: [poly_ridge, hgb]

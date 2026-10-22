@@ -4,7 +4,7 @@ from typing import Final, Literal, get_args
 
 Compound = Literal["SOFT", "MEDIUM", "HARD"]
 ModelCompound = Literal["SOFT", "MEDIUM", "HARD", "UNKNOWN"]
-ModelName = Literal["baseline_curve", "poly_ridge", "hgb"]
+ModelName = Literal["baseline_curve", "poly_ridge", "hgb", "lstm"]
 Split = Literal["train", "val", "test"]
 Era = Literal["refuel_2005_2009", "pre_tyre_data_2010_2017", "tyre_data_2018_plus"]
 StintSource = Literal["observed_tyre", "inferred_pitstops", "inferred_laptimes"]

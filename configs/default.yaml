@@ -11,10 +11,11 @@ competitive_threshold_s: 1.0
 threshold_sensitivity_s: [0.5, 0.75, 1.0, 1.5, 2.0]
 reference_tyre_age: 3
 horizon_n: 5
-horizon_max_k: 10
+horizon_max_k: 20
 warmup_effect_s: 0.0
 warmup_sensitivity_s: [0.5, 1.0]
-window_margin_sigma: 1.0
+window_margin_sigma: 1.0      # fallback; the pipeline calibrates it on validation stops
+window_target_coverage: 0.5   # smallest margin multiplier reaching this val in-window rate
 next_lap_interval_z: 1.28
 traffic_gap_s: 1.0
 outlier_pct: 1.07
@@ -22,6 +23,8 @@ outlier_window_laps: 3
 neutralised_field_pct: 1.25  # x median quali lap
 pit_detection_excess_s: 12.0
 tyre_age_clip_quantile: 0.95
+driver_offset: tyre_adjusted  # raw = expanding median of y_s (ablation; absorbs tyre wear)
+normalisation: field          # teammate = sensitivity variant (teammate reference pace)
 exclude_refuel_era: false
 no_tyre_change_seasons: [2005]
 historical_source: kaggle
@@ -32,6 +35,25 @@ sources:
   openf1_circuit_short_name: Catalunya
   tyre_source_order: [fastf1, openf1, kaggle_fastf1_export]
 models:
-  poly: {alpha: 1.0}
+  exclude_refuel_era_for: []
+  poly: {alpha: 1.0, age_degree: 1}
   gbm: {max_iter: 300, learning_rate: 0.05, max_leaf_nodes: 15, min_samples_leaf: 40}
+  # Encoder-decoder sequence model (Model 4). Early stopping uses the last two training seasons;
+  # 2024 validation stays untouched for model selection. A GRU twin is trained for comparison.
+  lstm:
+    cell: lstm
+    window: 10
+    horizon: 20
+    hidden: 48
+    layers: 1
+    dropout: 0.1
+    lr: 0.001
+    weight_decay: 0.0001
+    epochs: 200
+    batch: 256
+    patience: 30
+    seed: 42
+    decision_stride: 1
+    exclude_eras: [refuel_2005_2009]
+  lstm_loro: false              # LORO-CV for the LSTM: one extra training per training race
 random_seed: 42

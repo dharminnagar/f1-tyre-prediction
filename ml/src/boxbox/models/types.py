@@ -1,6 +1,6 @@
 """The pace-model contract and shared input preparation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
@@ -14,9 +14,14 @@ FloatArray = npt.NDArray[np.float64]
 
 @dataclass(frozen=True)
 class TyreAgeClip:
-    """Per-compound tyre-age cap (training P95); larger ages are clipped and flagged."""
+    """Per-compound tyre-age cap (training P95); larger ages are clipped and flagged.
+
+    ``min_slope`` (s/lap, per compound) is the least wear rate continued beyond the cap by
+    :func:`predict_pace`, normally the tyre prior's end slope.
+    """
 
     max_age: dict[str, float]
+    min_slope: dict[str, float] = field(default_factory=dict)
 
     def clip(self, X: pd.DataFrame) -> pd.DataFrame:
         caps = X["compound"].astype(str).map(self.max_age).fillna(max(self.max_age.values()))
@@ -72,7 +77,8 @@ def predict_pace(model: PaceModel, X: pd.DataFrame) -> FloatArray:
 
     Inside the cap this equals ``model.predict``. Beyond it, a flat clip would make very long
     stints look free, so the model's own slope over the last ``EXTRAPOLATION_SLOPE_SPAN`` laps
-    before the cap (floored at 0) is continued. Rows beyond the cap stay flagged extrapolated.
+    before the cap is continued, but never below the clip's ``min_slope`` for the compound (nor
+    below 0). Rows beyond the cap stay flagged extrapolated.
     """
     base = model.predict(X)
     if X.empty:
@@ -84,6 +90,7 @@ def predict_pace(model: PaceModel, X: pd.DataFrame) -> FloatArray:
         .fillna(max(model.tyre_clip.max_age.values()))
         .to_numpy(dtype=np.float64)
     )
+    compounds = X["compound"].astype(str)
     excess = np.clip(X["tyre_age"].to_numpy(dtype=np.float64) - caps, 0.0, None)
     if not excess.any():
         return base
@@ -92,7 +99,7 @@ def predict_pace(model: PaceModel, X: pd.DataFrame) -> FloatArray:
         tyre_age=caps - EXTRAPOLATION_SLOPE_SPAN,
         stint_lap=np.minimum(X["stint_lap"], caps - EXTRAPOLATION_SLOPE_SPAN),
     )
-    slope = np.clip(
-        (model.predict(at_cap) - model.predict(before)) / EXTRAPOLATION_SLOPE_SPAN, 0.0, None
-    )
+    floor = compounds.map(model.tyre_clip.min_slope).fillna(0.0).to_numpy(dtype=np.float64)
+    own = (model.predict(at_cap) - model.predict(before)) / EXTRAPOLATION_SLOPE_SPAN
+    slope = np.maximum(np.maximum(own, floor), 0.0)
     return np.asarray(base + slope * excess, dtype=np.float64)
