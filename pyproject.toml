@@ -1,0 +1,36 @@
+# Workspace tool configuration only (ruff, mypy, pytest). Packages live in ml/ and api/.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["ml/src", "api/src", "ml/tests", "api/tests"]
+extend-exclude = ["ml/notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ANN", "D", "SIM", "PD", "NPY", "RUF"]
+ignore = ["D100", "D102", "D104", "D105", "D107", "PD010", "PD013", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"ml/tests/**" = ["D", "ANN401"]
+"api/tests/**" = ["D", "ANN401"]
+"api/src/boxbox_api/schemas.py" = ["D101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = ["ml/src", "api/src"]
+packages = ["boxbox", "boxbox_api"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["fastf1", "fastf1.*", "sklearn", "sklearn.*", "joblib", "joblib.*", "dotenv", "dotenv.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["ml/tests", "api/tests"]
+markers = ["network: requires internet access (deselected by default)"]
+addopts = "-m 'not network' -q"
+filterwarnings = ["ignore::DeprecationWarning"]

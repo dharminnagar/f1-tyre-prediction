@@ -1,0 +1,37 @@
+# Shared defaults. Profile overlays (subset.yaml, full.yaml) override keys shallowly per section.
+event_name: "Spanish Grand Prix"
+circuit: "Circuit de Barcelona-Catalunya"
+fastf1_min_season: 2018
+seasons: [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+splits: {train: [2019, 2020, 2021, 2022, 2023], val: [2024], test: [2025]}
+compounds: [SOFT, MEDIUM, HARD]
+fuel_s_per_lap: 0.05
+fuel_sensitivity_s_per_lap: [0.03, 0.07]
+competitive_threshold_s: 1.0
+threshold_sensitivity_s: [0.5, 0.75, 1.0, 1.5, 2.0]
+reference_tyre_age: 3
+horizon_n: 5
+horizon_max_k: 10
+warmup_effect_s: 0.0
+warmup_sensitivity_s: [0.5, 1.0]
+window_margin_sigma: 1.0
+next_lap_interval_z: 1.28
+traffic_gap_s: 1.0
+outlier_pct: 1.07
+outlier_window_laps: 3
+neutralised_field_pct: 1.25  # x median quali lap
+pit_detection_excess_s: 12.0
+tyre_age_clip_quantile: 0.95
+exclude_refuel_era: false
+no_tyre_change_seasons: [2005]
+historical_source: kaggle
+sources:
+  jtrotman_dataset: jtrotman/formula-1-race-data
+  fastf1_export_dataset: aryagowda121/summary-of-f1-telemetrydata-2018-2022
+  fastf1_export_gp_name: Spain
+  openf1_circuit_short_name: Catalunya
+  tyre_source_order: [fastf1, openf1, kaggle_fastf1_export]
+models:
+  poly: {alpha: 1.0}
+  gbm: {max_iter: 300, learning_rate: 0.05, max_leaf_nodes: 15, min_samples_leaf: 40}
+random_seed: 42
