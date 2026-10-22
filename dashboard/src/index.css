@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  color-scheme: light;
+  --surface-0: #f4f4f2;
+  --surface-1: #fcfcfb;
+  --surface-2: #efefec;
+  --border: #e2e1dc;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #77766f;
+  --grid: #e9e8e3;
+  --accent: #2a78d6;
+  --window: rgba(42, 120, 214, 0.12);
+  --compound-soft: #c93a55;
+  --compound-medium: #b07c00;
+  --compound-hard: #3b6fb0;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --status-good: #1a7f37;
+  --status-critical: #c62828;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-0: #111110;
+    --surface-1: #1a1a19;
+    --surface-2: #242423;
+    --border: #33332f;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #94938a;
+    --grid: #2b2b28;
+    --accent: #3987e5;
+    --window: rgba(57, 135, 229, 0.18);
+    --compound-soft: #d4455f;
+    --compound-medium: #b88d00;
+    --compound-hard: #5d8fd8;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --status-good: #4ac26b;
+    --status-critical: #ef6b6b;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #111110;
+  --surface-1: #1a1a19;
+  --surface-2: #242423;
+  --border: #33332f;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #94938a;
+  --grid: #2b2b28;
+  --accent: #3987e5;
+  --window: rgba(57, 135, 229, 0.18);
+  --compound-soft: #d4455f;
+  --compound-medium: #b88d00;
+  --compound-hard: #5d8fd8;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --status-good: #4ac26b;
+  --status-critical: #ef6b6b;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
