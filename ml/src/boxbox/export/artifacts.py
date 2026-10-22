@@ -89,6 +89,15 @@ def curve_model_name(evaluation: EvaluationResult) -> ModelName:
     return lowest_val_mae(per_lap, "next_lap")
 
 
+def strategy_fields(evaluation: EvaluationResult, name: ModelName) -> dict[str, object]:
+    """``strategy_eligible`` / ``strategy_note`` of a manifest model entry (ungated: eligible)."""
+    gate = next((g for g in evaluation.strategy_gates if g.model == name), None)
+    return {
+        "strategy_eligible": gate is None or gate.eligible,
+        "strategy_note": gate.reason if gate is not None else None,
+    }
+
+
 def lstm_entry(
     model: TrainedLstm, evaluation: EvaluationResult, mae: dict[tuple[str, str], object]
 ) -> dict[str, object]:
@@ -106,6 +115,7 @@ def lstm_entry(
         "coefficients": None,
         "importances": None,
         "tyre_age_cap": model.tyre_clip.max_age,
+        **strategy_fields(evaluation, "lstm"),
     }
 
 
@@ -172,6 +182,7 @@ def export_all(
             "coefficients": description if name == "poly_ridge" else None,
             "importances": description if name == "hgb" else None,
             "tyre_age_cap": model.tyre_clip.max_age,
+            **strategy_fields(evaluation, name),
         }
         write_json(paths.models / f"{name}.meta.json", meta)
         model_entries.append(meta)
@@ -225,6 +236,7 @@ def export_all(
         "selection_rule": "lowest validation next-lap MAE",
         "strategy_selected_model": evaluation.strategy_selected_model,
         "strategy_selection_rule": evaluation.summary["strategy_selection_rule"],
+        "strategy_gate": evaluation.summary["strategy_gate"],
         "curve_model": curve_model,
         "sequence_model_files": [f"models/{WEIGHTS_FILE}", f"models/{META_FILE}"]
         if lstm is not None

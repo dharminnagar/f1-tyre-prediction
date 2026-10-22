@@ -11,6 +11,7 @@ from boxbox.evaluation.evaluate import (
     actual_excess_curves,
     actual_remaining_life,
     calibrate_margin,
+    strategy_gate,
 )
 from boxbox.features.build import build_features, rollout_design
 from boxbox.models.train import fit_models_on, training_rows
@@ -491,3 +492,14 @@ def test_per_lap_segments_equal_one_predict_pace_call_on_the_designs(
         single = predict_segments(model, *decisions[0])
         first = predict_pace(model, pd.concat(legacy[:2], ignore_index=True))
         np.testing.assert_array_equal(np.concatenate([p.y_s for p in single]), first)
+
+
+def test_strategy_gate_needs_both_validation_slope_and_window_coverage() -> None:
+    passed = strategy_gate("lstm", 0.065, 0.5)
+    assert passed.eligible and passed.reason is None
+    flat = strategy_gate("lstm", 0.044, 0.5)
+    assert not flat.eligible
+    assert flat.reason == "forecast only: validation rollout slope 0.044 s/lap < 0.06"
+    missing = strategy_gate("lstm", 0.07, None)
+    assert not missing.eligible
+    assert missing.reason == "forecast only: validation in-window rate n/a < 0.4"

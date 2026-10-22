@@ -53,6 +53,24 @@ DecisionMode = Literal["stint_lap_5", "all"]
 DECISION_MODES: Final[tuple[DecisionMode, ...]] = ("stint_lap_5", "all")
 MARGIN_CANDIDATES: Final[tuple[float, ...]] = (0.25, 0.5, 0.75, 1.0)
 NEAR_OPTIMUM_LAPS: Final[int] = 5
+STRATEGY_GATED_MODELS: Final[tuple[ModelName, ...]] = ("lstm",)
+STRATEGY_MIN_VAL_ROLLOUT_SLOPE: Final[float] = 0.06
+STRATEGY_MIN_VAL_IN_WINDOW: Final[float] = 0.4
+
+
+@dataclass(frozen=True)
+class StrategyGate:
+    """Whether a gated model may drive pit-window strategy (validation figures only).
+
+    A model failing the gate is still evaluated and served as a forecast, but it is never the
+    ``strategy_selected_model`` and the API refuses pit windows from it.
+    """
+
+    model: ModelName
+    val_rollout_s_per_lap: float | None
+    val_in_window_rate_kept: float | None
+    eligible: bool
+    reason: str | None
 
 
 @dataclass
@@ -61,6 +79,7 @@ class EvaluationResult:
 
     selected_model: ModelName
     strategy_selected_model: ModelName
+    strategy_gates: list[StrategyGate]
     pit_loss: PitLossEstimate
     sigma: dict[ModelName, SigmaCurve]
     strategy_sigma: dict[ModelName, SigmaCurve]
@@ -210,7 +229,9 @@ SLOPE_SPLITS: Final[dict[str, tuple[str, ...]]] = {
 
 
 def rollout_slope_rows(
-    features: pd.DataFrame, models: Mapping[ModelName, Forecaster]
+    features: pd.DataFrame,
+    models: Mapping[ModelName, Forecaster],
+    groups: Mapping[str, tuple[str, ...]] = SLOPE_SPLITS,
 ) -> list[dict[str, object]]:
     """Wear rate (s/lap of tyre age) implied by each model vs the data, per split group.
 
@@ -221,7 +242,7 @@ def rollout_slope_rows(
     """
     usable = features[features["era"].astype(str) != REFUEL_ERA]
     rows: list[dict[str, object]] = []
-    for group, splits in SLOPE_SPLITS.items():
+    for group, splits in groups.items():
         decisions = decision_rows(usable, splits)
         decisions = decisions[decisions["stint_lap"] == SLOPE_DECISION_STINT_LAP]
         branches = [
@@ -1236,6 +1257,58 @@ def pit_timing_by_model(
     return rows
 
 
+def strategy_gate(
+    name: ModelName, val_rollout_slope: float | None, val_in_window: float | None
+) -> StrategyGate:
+    """Gate a model on its validation rollout wear slope and pit-window coverage."""
+    failures = []
+    if val_rollout_slope is None or not val_rollout_slope >= STRATEGY_MIN_VAL_ROLLOUT_SLOPE:
+        failures.append(
+            f"validation rollout slope {_fmt(val_rollout_slope)} s/lap "
+            f"< {STRATEGY_MIN_VAL_ROLLOUT_SLOPE}"
+        )
+    if val_in_window is None or not val_in_window >= STRATEGY_MIN_VAL_IN_WINDOW:
+        failures.append(
+            f"validation in-window rate {_fmt(val_in_window)} < {STRATEGY_MIN_VAL_IN_WINDOW}"
+        )
+    reason = "forecast only: " + "; ".join(failures) if failures else None
+    return StrategyGate(name, val_rollout_slope, val_in_window, not failures, reason)
+
+
+def _fmt(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
+def strategy_gates(
+    features: pd.DataFrame,
+    models: Mapping[ModelName, Forecaster],
+    timing_by_model: list[dict[str, object]],
+) -> list[StrategyGate]:
+    """:func:`strategy_gate` for each model in ``STRATEGY_GATED_MODELS`` that was fitted.
+
+    Per-lap models are not gated: their rollouts apply the same row model at every lap, while
+    a sequence decoder can learn a flattened multi-lap wear trend that next-lap MAE misses.
+    """
+    gates = []
+    for name in STRATEGY_GATED_MODELS:
+        if name not in models:
+            continue
+        slope_rows = rollout_slope_rows(features, {name: models[name]}, {"val": ("val",)})
+        slope = float(str(slope_rows[0]["rollout_s_per_lap"])) if slope_rows else None
+        timing = next((r for r in timing_by_model if r["model"] == name), None)
+        summary = timing["summary"] if timing else None
+        val_summary = summary.get("val") if isinstance(summary, dict) else None
+        rate = val_summary.get("in_window_rate_kept") if isinstance(val_summary, dict) else None
+        gates.append(
+            strategy_gate(
+                name,
+                slope if slope is not None and np.isfinite(slope) else None,
+                float(rate) if isinstance(rate, int | float) else None,
+            )
+        )
+    return gates
+
+
 def evaluate(
     laps: pd.DataFrame,
     features: pd.DataFrame,
@@ -1270,7 +1343,6 @@ def evaluate(
         (cfg.horizon_n, 3, STRATEGY_HORIZON),
     )
     selected = lowest_val_mae(metric_rows, "next_lap")
-    strategy_model = lowest_val_mae(metric_rows, STRATEGY_SELECTION_TARGET, fallback=selected)
     sigma_by_name = {str(name): curve for name, curve in sigma.items()}
     predictions = with_next_lap_intervals(
         predictions, features, fitted, sigma_by_name, cfg.next_lap_interval_z
@@ -1290,6 +1362,14 @@ def evaluate(
         ].unique()
     )
     pit_loss = estimate_pit_loss(laps, train_races)
+    timing_by_model = pit_timing_by_model(features, models, strategy_sigma, pit_loss.median_s, cfg)
+    gates = strategy_gates(features, models, timing_by_model)
+    gated_out = {g.model for g in gates if not g.eligible}
+    strategy_model = lowest_val_mae(
+        [r for r in metric_rows if r["model"] not in gated_out],
+        STRATEGY_SELECTION_TARGET,
+        fallback=selected,
+    )
 
     ablation = next_lap_predictions(features, fitted.hgb_deg_ablation).assign(
         model="hgb_deg_ablation"
@@ -1308,7 +1388,11 @@ def evaluate(
         "selected_model": selected,
         "selection_rule": "lowest validation next-lap MAE",
         "strategy_selected_model": strategy_model,
-        "strategy_selection_rule": f"lowest validation {STRATEGY_SELECTION_TARGET} MAE",
+        "strategy_selection_rule": (
+            f"lowest validation {STRATEGY_SELECTION_TARGET} MAE among models passing the "
+            "strategy gate"
+        ),
+        "strategy_gate": [asdict(g) for g in gates],
         "metrics": metric_rows,
         "horizon": horizon_rows,
         "cumulative_stint": _cumulative_stint_rows(errors),
@@ -1340,9 +1424,7 @@ def evaluate(
             predictions[predictions["model"] == "lstm"],
             errors[errors["model"] == "lstm"],
         ),
-        "pit_timing_by_model": pit_timing_by_model(
-            features, models, strategy_sigma, pit_loss.median_s, cfg
-        ),
+        "pit_timing_by_model": timing_by_model,
         "sigma": _sigma_summary(sigma),
         "sigma_paired": _sigma_summary(strategy_sigma),
         "calibrated_margin_sigma": margin_sigma,
@@ -1366,6 +1448,7 @@ def evaluate(
     return EvaluationResult(
         selected_model=selected,
         strategy_selected_model=strategy_model,
+        strategy_gates=gates,
         pit_loss=pit_loss,
         sigma=sigma,
         strategy_sigma=strategy_sigma,
