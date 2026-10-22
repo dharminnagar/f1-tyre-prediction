@@ -49,7 +49,9 @@ def fit_all(features: pd.DataFrame, cfg: Config) -> FittedModels:
     rows = training_rows(features, ("train",))
     fitted = fit_models_on(rows, cfg, sequences_from=features, quantiles=True)
     gru_params = cfg.models.lstm.model_copy(update={"cell": "gru"})
-    gru = train_lstm(features, gru_params, sequence_clip(rows, cfg, fitted.prior, gru_params))
+    gru = train_lstm(
+        features, gru_params, sequence_clip(rows, cfg, fitted.prior, gru_params), fitted.prior
+    )
     return replace(fitted, gru=gru)
 
 
@@ -121,7 +123,9 @@ def fit_models_on(
     lstm = (
         None
         if sequences_from is None
-        else train_lstm(sequences_from, lstm_params, sequence_clip(rows, cfg, prior, lstm_params))
+        else train_lstm(
+            sequences_from, lstm_params, sequence_clip(rows, cfg, prior, lstm_params), prior
+        )
     )
     quantile = (
         fit_quantile_hgb(hgb, hgb["y_s"], clips["hgb"], cfg.models.gbm, cfg.random_seed)

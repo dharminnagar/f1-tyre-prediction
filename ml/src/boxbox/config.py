@@ -50,7 +50,10 @@ class LstmParams(Frozen):
 
     ``decision_stride`` keeps every n-th decision lap for training (consecutive decision laps
     share almost all of their inputs, so thinning loses little); 1 keeps all of them.
-    ``exclude_eras`` are dropped before sequences are built.
+    ``exclude_eras`` are dropped before sequences are built. ``offset_trend_penalty`` weighs
+    the mean squared lap-to-lap change of the network's offsets within a tyre set (added to the
+    Huber loss), so tyre wear comes from the prior baseline rather than a flattened learned
+    trend; 0 disables it.
     """
 
     window: int = 10
@@ -67,6 +70,7 @@ class LstmParams(Frozen):
     seed: int = 42
     decision_stride: int = 1
     exclude_eras: tuple[str, ...] = ("refuel_2005_2009",)
+    offset_trend_penalty: float = 0.0
 
 
 class ModelParams(Frozen):

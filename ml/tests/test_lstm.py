@@ -5,6 +5,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -43,6 +44,11 @@ DEG = 0.08
 TOTAL_LAPS = 36
 DESIGN_COLUMNS = ["compound", "tyre_age", "stint_lap", "lap_number", "race_progress"]
 CLIP = TyreAgeClip({"SOFT": 40.0, "MEDIUM": 40.0, "HARD": 40.0, "UNKNOWN": 40.0})
+FLAT_PRIOR = TyrePrior(
+    coefficients={"POOLED_DRY": (0.0, 0.0)},
+    caps={"POOLED_DRY": 40.0},
+    end_slope={"POOLED_DRY": 0.0},
+)
 
 
 def _driver_rows(
@@ -192,7 +198,7 @@ def test_future_from_design_matches_build_sequences() -> None:
 def test_overfits_tiny_synthetic_race() -> None:
     features = synthetic_features((2019,))
     params = FAST.model_copy(update={"epochs": 250})
-    model = train_lstm(features, params, CLIP)
+    model = train_lstm(features, params, CLIP, FLAT_PRIOR)
     batch = build_sequences(features, params.window, params.horizon)
     error = np.abs(predict_batch(model, batch) - batch.target)[batch.target_mask]
     assert model.inner_val_seasons == ()
@@ -203,7 +209,7 @@ def test_overfits_tiny_synthetic_race() -> None:
 def degradation_model() -> tuple[pd.DataFrame, TrainedLstm]:
     features = synthetic_features((2019, 2020, 2021, 2022), noise=0.05)
     params = LstmParams(window=8, horizon=12, hidden=32, epochs=120, patience=25, dropout=0.0)
-    return features, train_lstm(features, params, CLIP)
+    return features, train_lstm(features, params, CLIP, FLAT_PRIOR)
 
 
 def test_learns_degradation_slope_on_rollout(
@@ -221,6 +227,28 @@ def test_learns_degradation_slope_on_rollout(
     assert np.median(slopes) == pytest.approx(DEG, abs=0.02)
 
 
+def test_zero_offsets_and_extra_wear_follow_the_prior_from_the_history_level() -> None:
+    features = synthetic_features((2019,), noise=0.05)
+    prior = TyrePrior(
+        coefficients={"POOLED_DRY": (0.05, 0.0)},
+        caps={"POOLED_DRY": 40.0},
+        end_slope={"POOLED_DRY": 0.05},
+    )
+    model = train_lstm(features, FAST.model_copy(update={"epochs": 1}), CLIP, prior)
+    torch.nn.init.zeros_(model.network.head.weight)
+    torch.nn.init.zeros_(model.network.head.bias)
+    torch.nn.init.constant_(model.network.extra_wear, -30.0)
+    rows = features[
+        (features["driver_id"] == "a") & (features["lap"] > 6) & (features["lap"] <= 12)
+    ]
+    history, mask = history_for_state(features, "2019_01", "a", 6, FAST.window)
+    y = model.predict_rollout(history, mask, future_from_design(rows[DESIGN_COLUMNS], False))
+    clean = (mask & (history[:, HISTORY_FEATURES.index("is_clean")] > 0)).astype(bool)
+    hist_age = history[:, HISTORY_FEATURES.index("tyre_age")]
+    level = np.mean(history[clean, 0] - 0.05 * hist_age[clean])
+    np.testing.assert_allclose(y, level + 0.05 * rows["tyre_age"].to_numpy(), atol=1e-5)
+
+
 def test_inner_split_is_the_last_two_training_seasons_with_a_fallback_to_one() -> None:
     def seasons(years: tuple[int, ...]) -> tuple[int, ...]:
         return training_samples(synthetic_features(years), FAST)[2]
@@ -234,15 +262,15 @@ def test_deterministic_with_fixed_seed() -> None:
     features = synthetic_features((2019, 2020), noise=0.05)
     params = FAST.model_copy(update={"epochs": 5})
     batch = build_sequences(features, params.window, params.horizon)
-    first = predict_batch(train_lstm(features, params, CLIP), batch)
-    second = predict_batch(train_lstm(features, params, CLIP), batch)
+    first = predict_batch(train_lstm(features, params, CLIP, FLAT_PRIOR), batch)
+    second = predict_batch(train_lstm(features, params, CLIP, FLAT_PRIOR), batch)
     np.testing.assert_array_equal(first, second)
 
 
 def test_save_load_round_trip(tmp_path: Path) -> None:
     features = synthetic_features((2019, 2020), noise=0.05)
     params = FAST.model_copy(update={"epochs": 5, "cell": "gru"})
-    model = train_lstm(features, params, CLIP)
+    model = train_lstm(features, params, CLIP, FLAT_PRIOR)
     save_lstm(model, tmp_path)
     assert {p.name for p in tmp_path.iterdir()} == {"lstm.pt", "lstm.meta.json"}
     loaded = load_lstm(tmp_path)

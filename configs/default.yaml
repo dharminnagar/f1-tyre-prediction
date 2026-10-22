@@ -43,7 +43,7 @@ models:
   lstm:
     cell: lstm
     window: 10
-    horizon: 20
+    horizon: 66                 # decodes the whole race: no tyre-prior continuation past H
     hidden: 48
     layers: 1
     dropout: 0.1
@@ -55,5 +55,6 @@ models:
     seed: 42
     decision_stride: 1
     exclude_eras: [refuel_2005_2009]
+    offset_trend_penalty: 100.0 # wear comes from prior + learned slope, not a flattened RNN trend
   lstm_loro: false              # LORO-CV for the LSTM: one extra training per training race
 random_seed: 42

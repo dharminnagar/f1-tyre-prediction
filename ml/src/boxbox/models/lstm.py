@@ -3,8 +3,11 @@
 The encoder reads the driver's last ``window`` laps up to the decision lap; its final state
 seeds a decoder that reads the known future schedule (compound, tyre age, stint lap, lap
 number, race progress, new-stint flag). Each decoder step predicts ``y_s`` as an offset from
-the mean clean ``y_s`` in the history window, so the network only has to learn changes in
-pace (degradation, fresh tyres) rather than each driver's absolute level.
+a baseline: the mean clean ``y_s - wear`` in the history window plus the wear at the step's
+own compound and tyre age. ``wear`` is the tyre prior plus a learned non-negative linear slope
+per compound (``LstmPaceNet.extra_wear``), so the recurrent offsets only carry the driver's
+level and departures from a monotone wear curve; a shrunk or under-trained network falls
+back to that curve's slope instead of a flat pace.
 """
 
 import json
@@ -19,6 +22,13 @@ import torch
 from pydantic import BaseModel, ConfigDict
 
 from boxbox.config import LstmParams
+from boxbox.features.tyre_prior import (
+    POOLED_DRY,
+    TyrePrior,
+    prior_from_summary,
+    prior_summary,
+    tyre_prior_curve,
+)
 from boxbox.models.sequence_data import (
     FUTURE_FEATURES,
     HISTORY_CLEAN_INDEX,
@@ -36,6 +46,8 @@ WEIGHTS_FILE: Final[str] = "lstm.pt"
 META_FILE: Final[str] = "lstm.meta.json"
 PREDICT_CHUNK: Final[int] = 4096
 HUBER_DELTA_S: Final[float] = 1.0
+EXTRA_WEAR_INIT: Final[float] = -5.0
+"""Raw (pre-softplus) extra wear slope at initialisation: about 0.007 s/lap."""
 INNER_VAL_SEASONS: Final[int] = 2
 
 RnnState = torch.Tensor | tuple[torch.Tensor, torch.Tensor]
@@ -56,6 +68,11 @@ class LstmPaceNet(torch.nn.Module):
         )
         self.dropout = torch.nn.Dropout(params.dropout)
         self.head = torch.nn.Linear(params.hidden + n_future, 1)
+        self.extra_wear = torch.nn.Parameter(torch.full((len(MODEL_COMPOUNDS),), EXTRA_WEAR_INIT))
+
+    def extra_wear_slopes(self) -> torch.Tensor:
+        """[C] learned wear slope (s/lap) added to the prior per ``MODEL_COMPOUNDS`` entry."""
+        return torch.nn.functional.softplus(self.extra_wear)
 
     def forward(
         self, history: torch.Tensor, history_mask: torch.Tensor, future: torch.Tensor
@@ -87,6 +104,7 @@ class TrainedLstm:
     params: LstmParams
     scaler: Scaler
     tyre_clip: TyreAgeClip
+    prior: TyrePrior
     curve: tuple[tuple[int, float, float], ...]
     """(epoch, train loss, inner-validation loss) per epoch; inner loss NaN without inner split."""
     best_epoch: int
@@ -150,14 +168,32 @@ def clip_tyre_ages(arrays: FloatArray, names: tuple[str, ...], clip: TyreAgeClip
     return out
 
 
-def _history_level(history: FloatArray, history_mask: BoolArray) -> FloatArray:
-    """[N] mean clean ``y_s`` in each history window (all usable laps if none is clean)."""
-    y = history[..., HISTORY_Y_INDEX]
+def prior_on_steps(prior: TyrePrior, arrays: FloatArray, names: tuple[str, ...]) -> FloatArray:
+    """Tyre prior at each step's compound (one-hot columns) and ``tyre_age`` (shape [...]).
+
+    Steps without a model compound (wet laps, padding) use the pooled dry curve.
+    """
+    age = arrays[..., names.index("tyre_age")]
+    one_hot = arrays[..., [names.index(f"compound_{c}") for c in MODEL_COMPOUNDS]]
+    out = tyre_prior_curve(prior, POOLED_DRY, age)
+    for i, compound in enumerate(MODEL_COMPOUNDS):
+        on = one_hot[..., i] > 0
+        out = np.where(on, tyre_prior_curve(prior, compound, age), out)
+    return np.asarray(out, dtype=np.float64)
+
+
+def _level_weights(history: FloatArray, history_mask: BoolArray) -> FloatArray:
+    """[N, W] averaging weights over clean history laps (all usable laps if none is clean)."""
     clean = history_mask & (history[..., HISTORY_CLEAN_INDEX] > 0)
     use = np.where(clean.any(axis=1, keepdims=True), clean, history_mask)
-    counts = use.sum(axis=1)
-    level = np.where(use, y, 0.0).sum(axis=1) / np.maximum(counts, 1)
-    return np.asarray(level, dtype=np.float64)
+    counts = use.sum(axis=1, keepdims=True)
+    return np.asarray(use / np.maximum(counts, 1), dtype=np.float64)
+
+
+def _wear_basis(arrays: FloatArray, names: tuple[str, ...]) -> FloatArray:
+    """[..., C] tyre age in the step's compound column (zeros without a model compound)."""
+    one_hot = arrays[..., [names.index(f"compound_{c}") for c in MODEL_COMPOUNDS]]
+    return np.asarray(one_hot * arrays[..., names.index("tyre_age"), None], dtype=np.float64)
 
 
 def _fit_scaler(batch: SequenceBatch) -> Scaler:
@@ -181,20 +217,40 @@ class _Tensors:
     history: torch.Tensor
     history_mask: torch.Tensor
     future: torch.Tensor
-    level: torch.Tensor
+    baseline: torch.Tensor
+    """[N, H] mean clean ``y_s - prior`` of the history plus the prior of each future step."""
+    level_weights: torch.Tensor
+    history_wear: torch.Tensor
+    """[N, W, C] history tyre age per compound column (for the learned extra wear)."""
+    future_wear: torch.Tensor
+    same_set: torch.Tensor
+    """[N, H - 1] 1 where steps h and h + 1 are both real laps on the same tyre set."""
 
 
 def _to_tensors(
     model_scaler: Scaler,
     clip: TyreAgeClip,
+    prior: TyrePrior,
     history: FloatArray,
     history_mask: BoolArray,
     future: FloatArray,
 ) -> _Tensors:
-    """Clip, standardise and zero padding, as float32 tensors."""
-    level = _history_level(history, history_mask)
+    """Clip, standardise and zero padding, as float32 tensors.
+
+    The prior is read at the clipped tyre ages: wear past the cap is added by the forecaster
+    (``predict_branches``), as for the per-lap models.
+    """
     hist = clip_tyre_ages(history, HISTORY_FEATURES, clip)
     fut = clip_tyre_ages(future, FUTURE_FEATURES, clip)
+    weights = _level_weights(history, history_mask)
+    residual = history[..., HISTORY_Y_INDEX] - prior_on_steps(prior, hist, HISTORY_FEATURES)
+    level = (weights * residual).sum(axis=1)
+    baseline = level[:, None] + prior_on_steps(prior, fut, FUTURE_FEATURES)
+    history_wear = _wear_basis(hist, HISTORY_FEATURES)
+    future_wear = np.where(future_exists(future)[..., None], _wear_basis(fut, FUTURE_FEATURES), 0.0)
+    exists = future_exists(future)
+    new_stint = future[..., FUTURE_FEATURES.index("new_stint")]
+    same_set = exists[:, 1:] & exists[:, :-1] & (new_stint[:, 1:] == new_stint[:, :-1])
     hist = (hist - model_scaler.history_mean) / model_scaler.history_std
     hist = np.where(history_mask[..., None], hist, 0.0)
     fut = (fut - model_scaler.future_mean) / model_scaler.future_std
@@ -203,14 +259,23 @@ def _to_tensors(
         history=torch.from_numpy(hist.astype(np.float32)),
         history_mask=torch.from_numpy(history_mask.astype(np.float32)),
         future=torch.from_numpy(fut.astype(np.float32)),
-        level=torch.from_numpy(level.astype(np.float32)),
+        baseline=torch.from_numpy(baseline.astype(np.float32)),
+        level_weights=torch.from_numpy(weights.astype(np.float32)),
+        history_wear=torch.from_numpy(history_wear.astype(np.float32)),
+        future_wear=torch.from_numpy(future_wear.astype(np.float32)),
+        same_set=torch.from_numpy(same_set.astype(np.float32)),
     )
 
 
-def _forward(net: LstmPaceNet, t: _Tensors, rows: torch.Tensor | slice) -> torch.Tensor:
-    """Absolute ``y_s`` predictions [B, H] for the selected rows."""
+def _forward(
+    net: LstmPaceNet, t: _Tensors, rows: torch.Tensor | slice
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Absolute ``y_s`` predictions [B, H] and the recurrent offsets within them."""
     offsets: torch.Tensor = net(t.history[rows], t.history_mask[rows], t.future[rows])
-    return offsets + t.level[rows].unsqueeze(-1)
+    slopes = net.extra_wear_slopes()
+    history_extra = (t.level_weights[rows] * (t.history_wear[rows] @ slopes)).sum(dim=1)
+    extra = t.future_wear[rows] @ slopes - history_extra.unsqueeze(-1)
+    return offsets + t.baseline[rows] + extra, offsets
 
 
 def _masked_huber(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -218,16 +283,23 @@ def _masked_huber(pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor) 
     return (losses * mask).sum() / mask.sum().clamp(min=1.0)
 
 
+def _offset_trend(offsets: torch.Tensor, t: _Tensors, rows: torch.Tensor) -> torch.Tensor:
+    """Mean squared lap-to-lap change of the recurrent offsets within one tyre set."""
+    step = offsets[:, 1:] - offsets[:, :-1]
+    same = t.same_set[rows]
+    return (step.square() * same).sum() / same.sum().clamp(min=1.0)
+
+
 def _predict(
     model: TrainedLstm, history: FloatArray, history_mask: BoolArray, future: FloatArray
 ) -> FloatArray:
-    tensors = _to_tensors(model.scaler, model.tyre_clip, history, history_mask, future)
+    tensors = _to_tensors(model.scaler, model.tyre_clip, model.prior, history, history_mask, future)
     model.network.eval()
     chunks: list[FloatArray] = []
     with torch.no_grad():
         for start in range(0, history.shape[0], PREDICT_CHUNK):
             rows = slice(start, start + PREDICT_CHUNK)
-            chunks.append(np.asarray(_forward(model.network, tensors, rows).numpy(), np.float64))
+            chunks.append(np.asarray(_forward(model.network, tensors, rows)[0].numpy(), np.float64))
     if not chunks:
         return np.zeros((0, future.shape[1]), dtype=np.float64)
     return np.concatenate(chunks)
@@ -264,8 +336,13 @@ def training_samples(
     return batch, np.isin(seasons, inner_seasons), inner_seasons
 
 
-def train_lstm(features: pd.DataFrame, params: LstmParams, tyre_clip: TyreAgeClip) -> TrainedLstm:
+def train_lstm(
+    features: pd.DataFrame, params: LstmParams, tyre_clip: TyreAgeClip, prior: TyrePrior
+) -> TrainedLstm:
     """Fit the encoder–decoder on ``split == "train"`` rows (CPU, deterministic for a seed).
+
+    ``prior`` is the baseline wear curve the network's offsets are added to (see the module
+    docstring); it should be fitted on the same training rows.
 
     Early stopping monitors the masked Huber loss on the last training seasons (see
     :func:`training_samples`) so the real validation season stays untouched for model
@@ -283,7 +360,9 @@ def train_lstm(features: pd.DataFrame, params: LstmParams, tyre_clip: TyreAgeCli
     try:
         torch.manual_seed(params.seed)
         network = LstmPaceNet(len(HISTORY_FEATURES), len(FUTURE_FEATURES), params)
-        curve, best_epoch = _fit(network, fit_part, batch.subset(inner), scaler, tyre_clip, params)
+        curve, best_epoch = _fit(
+            network, fit_part, batch.subset(inner), scaler, tyre_clip, prior, params
+        )
     finally:
         torch.use_deterministic_algorithms(previous_deterministic)
     network.eval()
@@ -292,6 +371,7 @@ def train_lstm(features: pd.DataFrame, params: LstmParams, tyre_clip: TyreAgeCli
         params=params,
         scaler=scaler,
         tyre_clip=tyre_clip,
+        prior=prior,
         curve=curve,
         best_epoch=best_epoch,
         train_seconds=time.perf_counter() - started,
@@ -306,21 +386,30 @@ def _fit(
     inner_part: SequenceBatch,
     scaler: Scaler,
     clip: TyreAgeClip,
+    prior: TyrePrior,
     params: LstmParams,
 ) -> tuple[tuple[tuple[int, float, float], ...], int]:
     """Adam over shuffled mini-batches; returns the curve and the epoch whose weights are kept."""
-    train = _to_tensors(scaler, clip, fit_part.history, fit_part.history_mask, fit_part.future)
+    train = _to_tensors(
+        scaler, clip, prior, fit_part.history, fit_part.history_mask, fit_part.future
+    )
     target = torch.from_numpy(np.nan_to_num(fit_part.target).astype(np.float32))
     mask = torch.from_numpy(fit_part.target_mask.astype(np.float32))
     inner = _to_tensors(
-        scaler, clip, inner_part.history, inner_part.history_mask, inner_part.future
+        scaler, clip, prior, inner_part.history, inner_part.history_mask, inner_part.future
     )
     inner_target = torch.from_numpy(np.nan_to_num(inner_part.target).astype(np.float32))
     inner_mask = torch.from_numpy(inner_part.target_mask.astype(np.float32))
     has_inner = len(inner_part) > 0
 
+    # Decay would pull the raw extra-wear parameter towards 0, i.e. a softplus slope of 0.69.
+    recurrent = [p for n, p in network.named_parameters() if n != "extra_wear"]
     optimiser = torch.optim.Adam(
-        network.parameters(), lr=params.lr, weight_decay=params.weight_decay
+        [
+            {"params": recurrent, "weight_decay": params.weight_decay},
+            {"params": [network.extra_wear], "weight_decay": 0.0},
+        ],
+        lr=params.lr,
     )
     shuffler = torch.Generator().manual_seed(params.seed)
     curve: list[tuple[int, float, float]] = []
@@ -334,7 +423,10 @@ def _fit(
         for start in range(0, n, params.batch):
             rows = order[start : start + params.batch]
             optimiser.zero_grad()
-            loss = _masked_huber(_forward(network, train, rows), target[rows], mask[rows])
+            pred, offsets = _forward(network, train, rows)
+            loss = _masked_huber(pred, target[rows], mask[rows])
+            if params.offset_trend_penalty > 0:
+                loss = loss + params.offset_trend_penalty * _offset_trend(offsets, train, rows)
             torch.autograd.backward(loss)
             torch.nn.utils.clip_grad_norm_(network.parameters(), 1.0)
             optimiser.step()
@@ -343,7 +435,7 @@ def _fit(
         if has_inner:
             network.eval()
             with torch.no_grad():
-                pred = _forward(network, inner, slice(None))
+                pred = _forward(network, inner, slice(None))[0]
                 inner_loss = float(_masked_huber(pred, inner_target, inner_mask).item())
         curve.append((epoch, total / n, inner_loss))
         if not has_inner:
@@ -379,6 +471,7 @@ def save_lstm(model: TrainedLstm, directory: Path) -> None:
         "scaler": _scaler_json(model.scaler),
         "tyre_clip": model.tyre_clip.max_age,
         "tyre_min_slope": model.tyre_clip.min_slope,
+        "tyre_prior": prior_summary(model.prior),
         "history_features": list(model.history_features),
         "future_features": list(model.future_features),
         "curve": [list(row) for row in model.curve],
@@ -399,6 +492,7 @@ class _Meta(BaseModel):
     scaler: dict[str, list[float]]
     tyre_clip: dict[str, float]
     tyre_min_slope: dict[str, float] = {}
+    tyre_prior: dict[str, object]
     history_features: tuple[str, ...]
     future_features: tuple[str, ...]
     curve: tuple[tuple[int, float, float], ...]
@@ -423,6 +517,7 @@ def load_lstm(directory: Path) -> TrainedLstm:
         params=meta.params,
         scaler=scaler,
         tyre_clip=TyreAgeClip(dict(meta.tyre_clip), dict(meta.tyre_min_slope)),
+        prior=prior_from_summary(meta.tyre_prior),
         curve=meta.curve,
         best_epoch=meta.best_epoch,
         train_seconds=meta.train_seconds,

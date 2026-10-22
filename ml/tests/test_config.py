@@ -52,7 +52,8 @@ def test_lstm_hyper_parameters_live_in_config_without_torch() -> None:
 
     for profile in ("subset", "full"):
         lstm = load_config(profile).models.lstm
-        assert (lstm.cell, lstm.lr, lstm.patience, lstm.horizon) == ("lstm", 1e-3, 30, 20)
+        assert (lstm.cell, lstm.lr, lstm.patience, lstm.horizon) == ("lstm", 1e-3, 30, 66)
+        assert lstm.offset_trend_penalty == 100.0
         assert load_config(profile).models.lstm_loro is False
     code = "import sys, boxbox.config; assert 'torch' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)
