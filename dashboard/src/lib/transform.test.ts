@@ -1,5 +1,5 @@
-import { laps, pitWindow, state } from "../test/fixtures";
-import { costCurve, defaultLap, paceDomain, pacePoints, pivotCurves } from "./transform";
+import { laps, pitWindow, state, thresholdRows } from "../test/fixtures";
+import { costCurve, defaultLap, paceDomain, pacePoints, pivotCurves, planLabel, thresholdTable } from "./transform";
 
 describe("transforms", () => {
   it("splits clean and excluded laps and attaches the forecast band", () => {
@@ -25,6 +25,24 @@ describe("transforms", () => {
     expect(best?.costVsBest).toBe(0);
     expect(curve.find((p) => p.pitLap === 17)?.costVsBest).toBeCloseTo(0.9);
     expect(curve.filter((p) => p.inWindow).map((p) => p.pitLap)).toEqual([11, 12, 13, 14, 15, 16, 17]);
+  });
+
+  it("marks only candidates whose plan runs past the tyre-age cap", () => {
+    const curve = costCurve(pitWindow.candidates);
+    expect(curve.filter((p) => p.costPastCap !== null).map((p) => p.pitLap)).toEqual([27, 28, 29]);
+    expect(curve.find((p) => p.pitLap === 14)?.costPastCap).toBeNull();
+  });
+
+  it("labels the stop plan in order", () => {
+    expect(planLabel(pitWindow.plan)).toBe("L14 → MEDIUM · L22 → HARD");
+    expect(planLabel([])).toBe("");
+  });
+
+  it("filters threshold rows by decision mode and sorts thresholds", () => {
+    const table = thresholdTable(thresholdRows, "stint_lap_5");
+    expect(table.map((r) => r.threshold)).toEqual([0.5, 1]);
+    expect(table[1]?.byModel.get("poly_ridge")?.mae_laps).toBe(3.2);
+    expect(thresholdTable(thresholdRows, "all")).toHaveLength(1);
   });
 
   it("pivots curve points per compound and hides thin ages", () => {

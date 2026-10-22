@@ -17,6 +17,187 @@ import { AssumptionsPanel } from "../components/explain/AssumptionsPanel";
 import { Card, DataTable, Field, inputClass, StatusMessage } from "../components/ui";
 import { MODEL_ORDER } from "../lib/colors";
 import { formatPercent, formatSeconds, modelLabel } from "../lib/format";
+import { type DecisionMode, thresholdTable } from "../lib/transform";
+
+const DECISION_LABELS: Record<DecisionMode, string> = {
+  stint_lap_5: "Stint lap 5 (one per stint)",
+  all: "Every lap from stint lap 4",
+};
+
+function laps(value: number | null | undefined, signed = false): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const sign = signed && value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}`;
+}
+
+/** Remaining-life MAE (bias) per threshold and model for one decision mode. */
+export function ThresholdTable({
+  rows,
+  decision,
+  selectedModel,
+}: {
+  rows: Parameters<typeof thresholdTable>[0];
+  decision: DecisionMode;
+  selectedModel: ModelName;
+}) {
+  const table = thresholdTable(rows, decision);
+  return (
+    <DataTable
+      caption="Threshold sensitivity"
+      columns={[
+        { key: "threshold", label: "Threshold", align: "right" },
+        ...MODEL_ORDER.map((m) => ({ key: m, label: `${modelLabel(m)} MAE (bias)`, align: "right" as const })),
+        { key: "n", label: "Uncensored / censored", align: "right" },
+        { key: "consistency", label: "Censored consistency", align: "right" },
+      ]}
+      rows={table.map(({ threshold, byModel }) => {
+        const selected = byModel.get(selectedModel);
+        return {
+          threshold: `${threshold.toFixed(2)} s`,
+          ...Object.fromEntries(
+            MODEL_ORDER.map((m) => {
+              const row = byModel.get(m);
+              return [m, row ? `${laps(row.mae_laps)} (${laps(row.bias_laps, true)})` : "—"];
+            }),
+          ),
+          n: selected ? `${selected.n_uncensored} / ${selected.n_censored}` : "—",
+          consistency: formatPercent(selected?.censored_consistency, 0),
+        };
+      })}
+    />
+  );
+}
+
+/** Calibrated-window outcome per held-out split (stops not excluded). */
+export function PitTimingSummaryTable({ metrics }: { metrics: ProfileMetrics }) {
+  const splits = Object.entries(metrics.pit_timing_summary).sort(([a], [b]) => (a === "val" ? -1 : b === "val" ? 1 : 0));
+  return (
+    <DataTable
+      caption="Pit-timing summary"
+      columns={[
+        { key: "split", label: "Split" },
+        { key: "kept", label: "Stops kept", align: "right" },
+        { key: "rate", label: "In window", align: "right" },
+        { key: "width", label: "Median width", align: "right" },
+        { key: "bias", label: "Stint-1 optimum − actual", align: "right" },
+        { key: "pastCap", label: "Near-optimum past cap", align: "right" },
+        { key: "excluded", label: "Excluded" },
+      ]}
+      rows={splits.map(([split, s]) => ({
+        split,
+        kept: `${s.n_kept}/${s.n}`,
+        rate: formatPercent(s.in_window_rate_kept, 0),
+        width: s.median_width_kept === null || s.median_width_kept === undefined ? "—" : `${s.median_width_kept.toFixed(0)} laps`,
+        bias: `${laps(s.optimum_bias_kept_by_stint?.["1"], true)} laps`,
+        pastCap: formatPercent(s.near_optimum_past_cap_share_kept, 0),
+        excluded:
+          Object.entries(s.excluded)
+            .map(([reason, n]) => `${reason.replace("_", " ")} ${n}`)
+            .join(", ") || "none",
+      }))}
+    />
+  );
+}
+
+function rate(value: number | null | undefined): string {
+  return formatPercent(value, 0);
+}
+
+/** Empirical coverage and mean width of the served 80% intervals (val and test). */
+export function IntervalCoverageTable({ metrics }: { metrics: ProfileMetrics }) {
+  const rows = metrics.interval_coverage;
+  const find = (model: string, target: string, split: string) =>
+    rows.find((r) => r.model === model && r.target === target && r.split === split);
+  const targets = [...new Set(rows.map((r) => r.target))];
+  return (
+    <DataTable
+      caption="Interval coverage"
+      columns={[
+        { key: "model", label: "Model" },
+        { key: "target", label: "Target" },
+        { key: "method", label: "Method" },
+        { key: "val", label: "Val coverage (width)", align: "right" },
+        { key: "test", label: "Test coverage (width)", align: "right" },
+      ]}
+      rows={MODEL_ORDER.flatMap((model) =>
+        targets.flatMap((target) => {
+          const val = find(model, target, "val");
+          const test = find(model, target, "test");
+          if (val === undefined && test === undefined) return [];
+          const cell = (r: typeof val) =>
+            r === undefined ? "—" : `${rate(r.coverage)} (${formatSeconds(r.mean_width_s, 2)})`;
+          return [
+            {
+              model: modelLabel(model),
+              target: target.replaceAll("_", " "),
+              method: (val ?? test)?.method === "quantile" ? "quantile HGB" : "±1.28σ",
+              val: cell(val),
+              test: cell(test),
+            },
+          ];
+        }),
+      )}
+    />
+  );
+}
+
+/** LSTM vs GRU cell with identical hyper-parameters (the GRU is evaluation-only). */
+export function SequenceCellTable({ metrics }: { metrics: ProfileMetrics }) {
+  return (
+    <DataTable
+      caption="LSTM vs GRU"
+      columns={[
+        { key: "cell", label: "Cell" },
+        { key: "split", label: "Split" },
+        { key: "next", label: "Next lap", align: "right" },
+        { key: "mean", label: "Next-n mean", align: "right" },
+        { key: "k", label: "k-lap MAE", align: "right" },
+        { key: "slope", label: "Held-out slope", align: "right" },
+        { key: "time", label: "Train time", align: "right" },
+      ]}
+      rows={metrics.sequence_cell_comparison.map((r) => ({
+        cell: modelLabel(r.cell),
+        split: r.split,
+        next: formatSeconds(r.next_lap_mae),
+        mean: `${formatSeconds(r.next_n_mean_mae)} (n=${r.n})`,
+        k: `${formatSeconds(r.horizon_k_mae)} (k=${r.horizon_k})`,
+        slope: r.rollout_s_per_lap_held_out === null ? "—" : `${r.rollout_s_per_lap_held_out.toFixed(3)} s/lap`,
+        time: `${r.train_seconds.toFixed(0)} s (best epoch ${r.best_epoch})`,
+      }))}
+    />
+  );
+}
+
+/** Pit-timing outcome of every model, each with its own validation-calibrated margin. */
+export function PitTimingByModelTable({ metrics }: { metrics: ProfileMetrics }) {
+  return (
+    <DataTable
+      caption="Pit timing by model"
+      columns={[
+        { key: "model", label: "Model" },
+        { key: "margin", label: "Margin", align: "right" },
+        { key: "val", label: "Val in window (width)", align: "right" },
+        { key: "test", label: "Test in window (width)", align: "right" },
+        { key: "bias", label: "Val stint-1 optimum − actual", align: "right" },
+      ]}
+      rows={metrics.pit_timing_by_model.map((r) => {
+        const split = (name: string) => {
+          const s = r.summary[name];
+          if (s === undefined) return "—";
+          const width = s.median_width_kept === null || s.median_width_kept === undefined ? "—" : `${s.median_width_kept.toFixed(0)} laps`;
+          return `${rate(s.in_window_rate_kept)} (${width})`;
+        };
+        return {
+          model: modelLabel(r.model),
+          margin: `${r.calibrated_margin_sigma.toFixed(2)}σ`,
+          val: split("val"),
+          test: split("test"),
+          bias: `${laps(r.summary.val?.optimum_bias_kept_by_stint?.["1"], true)} laps`,
+        };
+      })}
+    />
+  );
+}
 
 const TARGETS = [
   { target: "next_lap", label: "Next lap" },
@@ -61,6 +242,7 @@ export function EvaluationPage({ profile }: { profile: Profile }) {
   const effectiveModel = model ?? current?.selected_model;
   const errors = useErrorGroups(profile, groupBy, effectiveModel);
   const threshold = useThresholdSensitivity(profile);
+  const [decision, setDecision] = useState<DecisionMode>("stint_lap_5");
   const timing = usePitTiming(profile);
 
   const races = useRaces(profile);
@@ -169,24 +351,27 @@ export function EvaluationPage({ profile }: { profile: Profile }) {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Competitive-threshold sensitivity" subtitle="Remaining-life MAE in laps on uncensored held-out decisions">
+        <Card
+          title="Remaining competitive life"
+          subtitle="Laps until the tyre loss exceeds the threshold on 2 consecutive clean laps; MAE and bias (predicted − actual) on uncensored held-out stints. Censored consistency = share of stints that never crossed where the model also lasts to the stint end."
+          actions={
+            <Field label="Decision">
+              <select
+                className={inputClass}
+                value={decision}
+                onChange={(e) => {
+                  setDecision(e.target.value === "all" ? "all" : "stint_lap_5");
+                }}
+              >
+                {(Object.keys(DECISION_LABELS) as DecisionMode[]).map((d) => (
+                  <option key={d} value={d}>{DECISION_LABELS[d]}</option>
+                ))}
+              </select>
+            </Field>
+          }
+        >
           {threshold.data ? (
-            <DataTable
-              caption="Threshold sensitivity"
-              columns={[
-                { key: "threshold", label: "Threshold", align: "right" },
-                ...MODEL_ORDER.map((m) => ({ key: m, label: modelLabel(m), align: "right" as const })),
-                { key: "n", label: "Uncensored", align: "right" },
-              ]}
-              rows={[...new Set(threshold.data.map((r) => r.threshold_s))].map((t) => {
-                const at = threshold.data.filter((r) => r.threshold_s === t);
-                return {
-                  threshold: `${t.toFixed(2)} s`,
-                  ...Object.fromEntries(MODEL_ORDER.map((m) => [m, at.find((r) => r.model === m)?.mae_laps?.toFixed(1) ?? "—"])),
-                  n: at[0] ? `${at[0].n_uncensored}/${at[0].n_total}` : "—",
-                };
-              })}
-            />
+            <ThresholdTable rows={threshold.data} decision={decision} selectedModel={current.selected_model} />
           ) : (
             <StatusMessage loading={threshold.isPending} error={threshold.error} />
           )}
@@ -202,7 +387,11 @@ export function EvaluationPage({ profile }: { profile: Profile }) {
               { key: "mean", label: "LORO mean", align: "right" },
               { key: "std", label: "± std", align: "right" },
             ]}
-            rows={current.loro_cv_summary.map((r) => ({ model: modelLabel(r.model), mean: formatSeconds(r.mean), std: formatSeconds(r.std) }))}
+            rows={current.loro_cv_summary.map((r) => ({
+              model: modelLabel(r.model),
+              mean: r.status === "not_run" ? "not run" : formatSeconds(r.mean),
+              std: r.status === "not_run" ? "—" : formatSeconds(r.std),
+            }))}
           />
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <DataTable
@@ -212,19 +401,51 @@ export function EvaluationPage({ profile }: { profile: Profile }) {
             />
             <DataTable
               caption="Fuel sensitivity"
-              columns={[{ key: "fuel", label: "Fuel s/lap" }, { key: "split", label: "Split" }, { key: "mae", label: "MAE", align: "right" }]}
-              rows={current.fuel_sensitivity.map((r) => ({ fuel: r.fuel_s_per_lap.toFixed(2), split: r.split, mae: formatSeconds(r.mae) }))}
+              columns={[
+                { key: "fuel", label: "Fuel s/lap" },
+                { key: "model", label: "Model" },
+                { key: "split", label: "Split" },
+                { key: "mae", label: "MAE", align: "right" },
+              ]}
+              rows={current.fuel_sensitivity.map((r) => ({
+                fuel: r.fuel_s_per_lap.toFixed(2),
+                model: modelLabel(r.model),
+                split: r.split,
+                mae: formatSeconds(r.mae),
+              }))}
             />
           </div>
+          {current.normalisation_sensitivity.length > 0 && (
+            <div className="mt-3">
+              <DataTable
+                caption="Normalisation sensitivity"
+                columns={[
+                  { key: "normalisation", label: "Reference pace" },
+                  { key: "model", label: "Model" },
+                  { key: "val", label: "Val MAE", align: "right" },
+                  { key: "test", label: "Test MAE", align: "right" },
+                  { key: "slope", label: "Held-out rollout slope", align: "right" },
+                ]}
+                rows={current.normalisation_sensitivity.map((r) => ({
+                  normalisation: r.normalisation === "field" ? "Field median" : "Teammate",
+                  model: modelLabel(r.model),
+                  val: formatSeconds(r.val_mae),
+                  test: formatSeconds(r.test_mae),
+                  slope: r.held_out_rollout_s_per_lap === null ? "—" : `${r.held_out_rollout_s_per_lap.toFixed(3)} s/lap`,
+                }))}
+              />
+            </div>
+          )}
         </Card>
       </div>
 
       <Card
         title="Pit-timing check (descriptive only)"
-        subtitle={`Window computed at stint lap 5 vs the actual in-lap; ${formatPercent(current.pit_timing_in_window_rate)} of stops fell inside`}
+        subtitle={`Window computed at stint lap 5 vs the actual in-lap; margin ${current.calibrated_margin_sigma === null ? "not calibrated" : `${current.calibrated_margin_sigma.toFixed(2)}σ, the smallest reaching ${formatPercent(current.window_target_coverage, 0)} of validation stops`}. Rates exclude safety-car, short-stint and retirement stops; ${formatPercent(current.pit_timing_in_window_rate)} of all stops fell inside.`}
       >
+        <PitTimingSummaryTable metrics={current} />
         {timing.data ? (
-          <div className="max-h-80 overflow-y-auto">
+          <div className="mt-3 max-h-80 overflow-y-auto">
             <DataTable
               caption="Pit timing"
               columns={[
@@ -235,6 +456,7 @@ export function EvaluationPage({ profile }: { profile: Profile }) {
                 { key: "window", label: "Window", align: "right" },
                 { key: "optimal", label: "Optimal", align: "right" },
                 { key: "inside", label: "Inside" },
+                { key: "excluded", label: "Excluded" },
               ]}
               rows={timing.data.map((r) => ({
                 race: r.race_id,
@@ -244,6 +466,7 @@ export function EvaluationPage({ profile }: { profile: Profile }) {
                 window: r.window_start !== null && r.window_end !== null ? `${r.window_start}–${r.window_end}` : "none",
                 optimal: r.optimal_lap ?? "—",
                 inside: r.actual_in_window ? "yes" : "no",
+                excluded: r.excluded_reason?.replace("_", " ") ?? "",
               }))}
             />
           </div>
@@ -251,6 +474,30 @@ export function EvaluationPage({ profile }: { profile: Profile }) {
           <StatusMessage loading={timing.isPending} error={timing.error} />
         )}
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card
+          title="80% interval coverage"
+          subtitle="Share of held-out lap times inside the served interval (target 75–85%). σ is fitted on validation rollouts, so its validation coverage is in-sample; test is the fair comparison."
+        >
+          {current.interval_coverage.length > 0 ? <IntervalCoverageTable metrics={current} /> : <StatusMessage empty="No interval coverage in these artifacts" />}
+        </Card>
+        <Card
+          title="Sequence model"
+          subtitle="Encoder–decoder over lap history; the GRU twin is trained for comparison only and is not selectable. Laps beyond the decoder horizon follow the tyre prior."
+        >
+          {current.sequence_cell_comparison.length > 0 ? <SequenceCellTable metrics={current} /> : <StatusMessage empty="No sequence model in these artifacts" />}
+        </Card>
+      </div>
+
+      {current.pit_timing_by_model.length > 0 && (
+        <Card
+          title="Pit timing by model"
+          subtitle="Same descriptive check for every model, each with the smallest margin reaching the validation target (kept stops only)"
+        >
+          <PitTimingByModelTable metrics={current} />
+        </Card>
+      )}
 
       <Card title="Assumptions">
         <AssumptionsPanel metrics={current} />

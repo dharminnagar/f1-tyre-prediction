@@ -1,4 +1,4 @@
-import type { DriverSummary, ModelInfo, RaceSummary } from "../../api/client";
+import type { DriverSummary, ModelInfo, ModelName, RaceSummary } from "../../api/client";
 import { modelLabel } from "../../lib/format";
 import type { Selection } from "../../lib/selection";
 import { Field, inputClass } from "../ui";
@@ -11,6 +11,7 @@ export function Selectors({
   races,
   drivers,
   models,
+  defaultModel,
   maxLap,
 }: {
   selection: Selection;
@@ -18,6 +19,8 @@ export function Selectors({
   races: readonly RaceSummary[];
   drivers: readonly DriverSummary[];
   models: readonly ModelInfo[];
+  /** Model shown when none is chosen (the page's API default). */
+  defaultModel: ModelName | undefined;
   maxLap: number;
 }) {
   return (
@@ -81,7 +84,7 @@ export function Selectors({
       <Field label="Model">
         <select
           className={inputClass}
-          value={selection.model ?? models.find((m) => m.selected)?.name ?? ""}
+          value={selection.model ?? defaultModel ?? ""}
           onChange={(e) => {
             update({ model: e.target.value });
           }}
@@ -89,7 +92,8 @@ export function Selectors({
           {models.map((m) => (
             <option key={m.name} value={m.name}>
               {modelLabel(m.name)}
-              {m.selected ? " (selected)" : ""}
+              {m.selected_for_strategy ? " (strategy pick)" : ""}
+              {m.selected ? " (best next-lap)" : ""}
             </option>
           ))}
         </select>

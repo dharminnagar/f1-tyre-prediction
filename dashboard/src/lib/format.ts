@@ -28,6 +28,8 @@ export const MODEL_LABELS: Record<string, string> = {
   baseline_curve: "Baseline curve",
   poly_ridge: "Polynomial ridge",
   hgb: "Gradient boosting",
+  lstm: "LSTM sequence",
+  gru: "GRU sequence",
   hgb_deg_ablation: "GBM + deg features",
 };
 

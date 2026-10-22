@@ -32,7 +32,7 @@ export function KpiTiles({ state, window }: { state: TyreState; window: PitWindo
       >
         {formatDelta(state.degradation.model_s_per_lap, 3)}/lap
       </Tile>
-      <Tile label={`Next lap (${next.lap})`} hint={`80%: ${formatLapTime(next.lo_s)} – ${formatLapTime(next.hi_s)}`}>
+      <Tile label={`Next lap (${next.lap})`} hint={`80% ${next.method === "quantile" ? "quantile" : "±σ"}: ${formatLapTime(next.lo_s)} – ${formatLapTime(next.hi_s)}`}>
         {formatLapTime(next.pred_s)}
       </Tile>
       <Tile label={`Next ${state.next_laps.length} laps`} hint={state.next_laps.some((i) => i.extrapolated) ? "beyond training tyre ages" : undefined}>

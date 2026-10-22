@@ -3,6 +3,8 @@ import type {
   CurvePoint,
   LapRecord,
   PitCandidate,
+  PitWindowResponse,
+  ThresholdRow,
   TyreState,
 } from "../api/client";
 
@@ -48,9 +50,12 @@ export function paceDomain(points: readonly PacePoint[]): [number, number] {
 export interface CostPoint {
   pitLap: number;
   costVsBest: number;
+  /** Same as costVsBest where the plan runs a tyre past its training age cap, else null. */
+  costPastCap: number | null;
   margin: number;
   inWindow: boolean;
   advantage: number;
+  lapsPastCap: number;
 }
 
 /** Pit cost relative to the cheapest candidate (seconds lost by boxing on that lap instead). */
@@ -60,9 +65,33 @@ export function costCurve(candidates: readonly PitCandidate[]): CostPoint[] {
   return candidates.map((c) => ({
     pitLap: c.pit_lap,
     costVsBest: c.cost_pit_s - best,
+    costPastCap: c.laps_past_cap > 0 ? c.cost_pit_s - best : null,
     margin: c.margin_s,
     inWindow: c.in_window,
     advantage: c.advantage_s,
+    lapsPastCap: c.laps_past_cap,
+  }));
+}
+
+export type PlannedStop = PitWindowResponse["plan"][number];
+
+/** Stop sequence as "L23 → MEDIUM · L45 → HARD" ("" for an empty plan). */
+export function planLabel(plan: readonly PlannedStop[]): string {
+  return plan.map((stop) => `L${stop.lap} → ${stop.compound}`).join(" · ");
+}
+
+export type DecisionMode = ThresholdRow["decision"];
+
+/** Threshold-sensitivity rows of one decision mode, one entry per threshold (ascending). */
+export function thresholdTable(
+  rows: readonly ThresholdRow[],
+  decision: DecisionMode,
+): { threshold: number; byModel: Map<string, ThresholdRow> }[] {
+  const selected = rows.filter((r) => r.decision === decision);
+  const thresholds = [...new Set(selected.map((r) => r.threshold_s))].sort((a, b) => a - b);
+  return thresholds.map((threshold) => ({
+    threshold,
+    byModel: new Map(selected.filter((r) => r.threshold_s === threshold).map((r) => [r.model, r])),
   }));
 }
 

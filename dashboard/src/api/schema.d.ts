@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * Models
-         * @description Models with features, held-out MAE and interpretable parameters.
+         * @description Models with features, held-out MAE, interpretable parameters and selection flags.
          */
         get: operations["models_api_models_get"];
         put?: never;
@@ -253,7 +253,7 @@ export interface paths {
         };
         /**
          * Threshold Sensitivity
-         * @description Remaining-life MAE (laps) for each competitive threshold and model.
+         * @description Remaining-life MAE/bias (laps) per decision mode, competitive threshold and model.
          */
         get: operations["threshold_sensitivity_api_evaluation_threshold_sensitivity_get"];
         put?: never;
@@ -337,6 +337,11 @@ export interface components {
             fuel_s_per_lap: number;
             /** Margin Sigma */
             margin_sigma: number;
+            /**
+             * Margin Source
+             * @enum {string}
+             */
+            margin_source: "calibrated" | "config";
             /** Threshold S */
             threshold_s: number;
             /** Reference Tyre Age */
@@ -355,7 +360,7 @@ export interface components {
             /** Pit Lap */
             pit_lap: number;
             /** Model */
-            model?: ("baseline_curve" | "poly_ridge" | "hgb") | null;
+            model?: ("baseline_curve" | "poly_ridge" | "hgb" | "lstm") | null;
             /** Profile */
             profile?: ("subset" | "full") | null;
             /** Replacement Compound */
@@ -387,7 +392,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /**
              * Split
              * @enum {string}
@@ -484,7 +489,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /**
              * Split
              * @enum {string}
@@ -518,7 +523,12 @@ export interface components {
              * Selected Model
              * @enum {string}
              */
-            selected_model: "baseline_curve" | "poly_ridge" | "hgb";
+            selected_model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
+            /**
+             * Strategy Selected Model
+             * @enum {string}
+             */
+            strategy_selected_model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
         };
         /** HorizonRow */
         HorizonRow: {
@@ -526,7 +536,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /**
              * Split
              * @enum {string}
@@ -545,12 +555,56 @@ export interface components {
             lap: number;
             /** Pred S */
             pred_s: number;
-            /** Lo S */
+            /**
+             * Lo S
+             * @description Lower bound of the 80% interval
+             */
             lo_s: number;
-            /** Hi S */
+            /**
+             * Hi S
+             * @description Upper bound of the 80% interval
+             */
             hi_s: number;
             /** Extrapolated */
             extrapolated: boolean;
+            /**
+             * Method
+             * @description quantile = HGB quantile companions; sigma = ±z x validation error sigma
+             * @enum {string}
+             */
+            method: "quantile" | "sigma";
+        };
+        /** IntervalCoverageRow */
+        IntervalCoverageRow: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /**
+             * Target
+             * @description next_lap, next_{n}_laps (each lap) or next_{n}_mean
+             */
+            target: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "quantile" | "sigma";
+            /**
+             * Coverage
+             * @description Share of actual lap times inside the interval
+             */
+            coverage: number | null;
+            /** Mean Width S */
+            mean_width_s: number | null;
+            /** N */
+            n: number;
         };
         /** LapRecord */
         LapRecord: {
@@ -598,7 +652,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /** Race Id */
             race_id: string;
             /** Mae */
@@ -612,11 +666,29 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /** Mean */
-            mean: number;
+            mean: number | null;
             /** Std */
             std: number | null;
+            /**
+             * Status
+             * @description not_run = LORO-CV skipped for this model (config flag)
+             * @default run
+             * @enum {string}
+             */
+            status: "run" | "not_run";
+        };
+        /** MarginCalibrationRow */
+        MarginCalibrationRow: {
+            /** Margin Sigma */
+            margin_sigma: number;
+            /** In Window Rate */
+            in_window_rate: number | null;
+            /** Median Width Laps */
+            median_width_laps: number | null;
+            /** N */
+            n: number;
         };
         /** MetricRow */
         MetricRow: {
@@ -631,7 +703,7 @@ export interface components {
              * Target
              * @enum {string}
              */
-            target: "next_lap" | "next_5_mean" | "next_3_mean";
+            target: "next_lap" | "next_5_mean" | "next_3_mean" | "next_10_mean";
             /** Mae */
             mae: number | null;
             /** Rmse */
@@ -654,11 +726,13 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "baseline_curve" | "poly_ridge" | "hgb";
+            name: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /** Features */
             features: string[];
             /** Selected */
             selected: boolean;
+            /** Selected For Strategy */
+            selected_for_strategy: boolean;
             /** Coefficients */
             coefficients: {
                 [key: string]: number;
@@ -676,6 +750,25 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** NormalisationSensitivityRow */
+        NormalisationSensitivityRow: {
+            /**
+             * Normalisation
+             * @enum {string}
+             */
+            normalisation: "field" | "teammate";
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
+            /** Val Mae */
+            val_mae: number | null;
+            /** Test Mae */
+            test_mae: number | null;
+            /** Held Out Rollout S Per Lap */
+            held_out_rollout_s_per_lap: number | null;
+        };
         /** PitCandidateOut */
         PitCandidateOut: {
             /** Pit Lap */
@@ -690,7 +783,15 @@ export interface components {
             margin_s: number;
             /** In Window */
             in_window: boolean;
-            /** Extrapolated */
+            /**
+             * Laps Past Cap
+             * @description Laps of this candidate's plan run beyond the model's training tyre-age cap
+             */
+            laps_past_cap: number;
+            /**
+             * Extrapolated
+             * @description laps_past_cap > 0
+             */
             extrapolated: boolean;
         };
         /** PitLossOut */
@@ -705,6 +806,20 @@ export interface components {
             n_stops: number;
             /** Races */
             races: string[];
+        };
+        /** PitTimingByModelRow */
+        PitTimingByModelRow: {
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
+            /** Calibrated Margin Sigma */
+            calibrated_margin_sigma: number;
+            /** Summary */
+            summary: {
+                [key: string]: components["schemas"]["PitTimingSplitSummary"];
+            };
         };
         /** PitTimingRow */
         PitTimingRow: {
@@ -726,6 +841,47 @@ export interface components {
             optimal_lap: number | null;
             /** Actual In Window */
             actual_in_window: boolean;
+            /** Split */
+            split?: ("train" | "val" | "test") | null;
+            /** Excluded Reason */
+            excluded_reason?: ("retirement" | "neutralised" | "short_stint") | null;
+            /** Planned Stops */
+            planned_stops?: number | null;
+            /** Optimum Laps Past Cap */
+            optimum_laps_past_cap?: number | null;
+            /** Near Optimum Past Cap Share */
+            near_optimum_past_cap_share?: number | null;
+        };
+        /** PitTimingSplitSummary */
+        PitTimingSplitSummary: {
+            /** N */
+            n: number;
+            /** In Window Rate */
+            in_window_rate: number | null;
+            /** N Kept */
+            n_kept: number;
+            /** In Window Rate Kept */
+            in_window_rate_kept: number | null;
+            /** Excluded */
+            excluded: {
+                [key: string]: number;
+            };
+            /** In Window Rate Kept By Stint */
+            in_window_rate_kept_by_stint: {
+                [key: string]: number | null;
+            };
+            /** Median Width Kept */
+            median_width_kept?: number | null;
+            /** No Window Share Kept */
+            no_window_share_kept?: number | null;
+            /** Optimum Bias Kept By Stint */
+            optimum_bias_kept_by_stint?: {
+                [key: string]: number | null;
+            };
+            /** Near Optimum Past Cap Share Kept */
+            near_optimum_past_cap_share_kept?: number | null;
+            /** Optimum Past Cap Share Kept */
+            optimum_past_cap_share_kept?: number | null;
         };
         /** PitWindowRequest */
         PitWindowRequest: {
@@ -736,7 +892,7 @@ export interface components {
             /** Lap */
             lap: number;
             /** Model */
-            model?: ("baseline_curve" | "poly_ridge" | "hgb") | null;
+            model?: ("baseline_curve" | "poly_ridge" | "hgb" | "lstm") | null;
             /** Profile */
             profile?: ("subset" | "full") | null;
             /** Replacement Compound */
@@ -754,12 +910,17 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /** Candidates */
             candidates: components["schemas"]["PitCandidateOut"][];
             window: components["schemas"]["LapWindow"] | null;
             /** Optimal Lap */
             optimal_lap: number | null;
+            /**
+             * Plan
+             * @description Cheapest stop sequence when boxing on the optimal lap (first stop first)
+             */
+            plan: components["schemas"]["PlannedStopOut"][];
             /** Stay Out Feasible */
             stay_out_feasible: boolean;
             /**
@@ -774,6 +935,20 @@ export interface components {
             assumptions: components["schemas"]["Assumptions"];
             /** Explanation */
             explanation: string[];
+        };
+        /** PlannedStopOut */
+        PlannedStopOut: {
+            /**
+             * Lap
+             * @description In-lap of the stop
+             */
+            lap: number;
+            /**
+             * Compound
+             * @description Fresh set fitted at this stop
+             * @enum {string}
+             */
+            compound: "SOFT" | "MEDIUM" | "HARD";
         };
         /** PredictionRow */
         PredictionRow: {
@@ -810,7 +985,12 @@ export interface components {
              * Selected Model
              * @enum {string}
              */
-            selected_model: "baseline_curve" | "poly_ridge" | "hgb";
+            selected_model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
+            /**
+             * Strategy Selected Model
+             * @enum {string}
+             */
+            strategy_selected_model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /** Train Seasons */
             train_seasons: number[];
             /** Val Seasons */
@@ -831,7 +1011,7 @@ export interface components {
              * Selected Model
              * @enum {string}
              */
-            selected_model: "baseline_curve" | "poly_ridge" | "hgb";
+            selected_model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /** Selection Rule */
             selection_rule: string;
             /** Metrics */
@@ -852,6 +1032,24 @@ export interface components {
             stint_verification: components["schemas"]["StintVerificationOut"];
             /** Pit Timing In Window Rate */
             pit_timing_in_window_rate: number | null;
+            /** Pit Timing Summary */
+            pit_timing_summary: {
+                [key: string]: components["schemas"]["PitTimingSplitSummary"];
+            };
+            /** Normalisation Sensitivity */
+            normalisation_sensitivity: components["schemas"]["NormalisationSensitivityRow"][];
+            /** Calibrated Margin Sigma */
+            calibrated_margin_sigma: number | null;
+            /** Window Target Coverage */
+            window_target_coverage: number | null;
+            /** Margin Calibration */
+            margin_calibration: components["schemas"]["MarginCalibrationRow"][];
+            /** Interval Coverage */
+            interval_coverage: components["schemas"]["IntervalCoverageRow"][];
+            /** Sequence Cell Comparison */
+            sequence_cell_comparison: components["schemas"]["SequenceCellRow"][];
+            /** Pit Timing By Model */
+            pit_timing_by_model: components["schemas"]["PitTimingByModelRow"][];
             /** Train Races */
             train_races: number;
         };
@@ -890,6 +1088,37 @@ export interface components {
             /** Capped By Race End */
             capped_by_race_end: boolean;
         };
+        /** SequenceCellRow */
+        SequenceCellRow: {
+            /**
+             * Cell
+             * @enum {string}
+             */
+            cell: "lstm" | "gru";
+            /**
+             * Split
+             * @enum {string}
+             */
+            split: "train" | "val" | "test";
+            /** Next Lap Mae */
+            next_lap_mae: number | null;
+            /** Next N Mean Mae */
+            next_n_mean_mae: number | null;
+            /** N */
+            n: number;
+            /** Horizon K */
+            horizon_k: number;
+            /** Horizon K Mae */
+            horizon_k_mae: number | null;
+            /** Rollout S Per Lap Held Out */
+            rollout_s_per_lap_held_out: number | null;
+            /** Rollout S Per Lap Train */
+            rollout_s_per_lap_train: number | null;
+            /** Train Seconds */
+            train_seconds: number;
+            /** Best Epoch */
+            best_epoch: number;
+        };
         /** StintSummary */
         StintSummary: {
             /** Stint Id */
@@ -919,17 +1148,31 @@ export interface components {
         };
         /** ThresholdRow */
         ThresholdRow: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "stint_lap_5" | "all";
             /** Threshold S */
             threshold_s: number;
             /**
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /** Mae Laps */
             mae_laps: number | null;
+            /** Bias Laps */
+            bias_laps: number | null;
             /** N Uncensored */
             n_uncensored: number;
+            /** N Censored */
+            n_censored: number;
+            /**
+             * Censored Consistency
+             * @description Share of censored stints where the predicted life reaches the stint end
+             */
+            censored_consistency: number | null;
             /** N Total */
             n_total: number;
         };
@@ -945,7 +1188,7 @@ export interface components {
              * Model
              * @enum {string}
              */
-            model: "baseline_curve" | "poly_ridge" | "hgb";
+            model: "baseline_curve" | "poly_ridge" | "hgb" | "lstm";
             /**
              * Compound
              * @enum {string}
@@ -1168,7 +1411,7 @@ export interface operations {
                 driver_id: string;
                 lap: number;
                 /** @description defaults to the selected model */
-                model?: ("baseline_curve" | "poly_ridge" | "hgb") | null;
+                model?: ("baseline_curve" | "poly_ridge" | "hgb" | "lstm") | null;
                 /** @description subset | full (default profile) */
                 profile?: ("subset" | "full") | null;
             };
@@ -1291,7 +1534,7 @@ export interface operations {
                 driver_id: string;
                 stint_id: number;
                 /** @description defaults to the selected model */
-                model?: ("baseline_curve" | "poly_ridge" | "hgb") | null;
+                model?: ("baseline_curve" | "poly_ridge" | "hgb" | "lstm") | null;
                 /** @description subset | full (default profile) */
                 profile?: ("subset" | "full") | null;
             };
@@ -1326,7 +1569,7 @@ export interface operations {
             query?: {
                 group_by?: "compound" | "race" | "stint_length";
                 /** @description defaults to the selected model */
-                model?: ("baseline_curve" | "poly_ridge" | "hgb") | null;
+                model?: ("baseline_curve" | "poly_ridge" | "hgb" | "lstm") | null;
                 /** @description subset | full (default profile) */
                 profile?: ("subset" | "full") | null;
             };

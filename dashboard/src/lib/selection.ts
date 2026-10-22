@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router";
 
 import type { ModelName, Profile } from "../api/client";
+import { MODEL_ORDER } from "./colors";
 
 export interface Selection {
   profile: Profile | undefined;
@@ -13,14 +14,12 @@ export interface Selection {
 
 type SelectionKey = keyof Selection;
 
-const MODELS: readonly string[] = ["baseline_curve", "poly_ridge", "hgb"];
-
 export function parseProfile(value: string | null): Profile | undefined {
   return value === "subset" || value === "full" ? value : undefined;
 }
 
 export function parseModel(value: string | null): ModelName | undefined {
-  return value !== null && MODELS.includes(value) ? (value as ModelName) : undefined;
+  return MODEL_ORDER.find((m) => m === value);
 }
 
 export function parseLap(value: string | null): number | undefined {

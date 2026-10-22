@@ -5,7 +5,8 @@ describe("url selection parsing", () => {
     expect(parseProfile("full")).toBe("full");
     expect(parseProfile("other")).toBeUndefined();
     expect(parseModel("hgb")).toBe("hgb");
-    expect(parseModel("lstm")).toBeUndefined();
+    expect(parseModel("lstm")).toBe("lstm");
+    expect(parseModel("gru")).toBeUndefined();
   });
 
   it("parses positive integer laps", () => {

@@ -20,7 +20,7 @@ import { Selectors } from "../components/selectors/Selectors";
 import { Card, Field, inputClass, StatusMessage } from "../components/ui";
 import { formatDelta } from "../lib/format";
 import { useSelection } from "../lib/selection";
-import { defaultLap } from "../lib/transform";
+import { defaultLap, planLabel } from "../lib/transform";
 
 export function PitWallPage({ profile }: { profile: Profile }) {
   const [selection, update] = useSelection();
@@ -34,10 +34,13 @@ export function PitWallPage({ profile }: { profile: Profile }) {
   const totalLaps = race?.total_laps ?? 2;
   const lastLap = laps.data?.[laps.data.length - 1]?.lap ?? totalLaps;
   const lap = Math.min(selection.lap ?? defaultLap(laps.data ?? []) ?? 2, Math.max(2, Math.min(lastLap, totalLaps - 1)));
+  // Strategy views default to the model with the best multi-lap (not next-lap) accuracy.
+  const strategyModel = models.data?.find((m) => m.selected_for_strategy)?.name;
+  const model = selection.model ?? strategyModel;
 
   const decision =
-    raceId !== undefined && driverId !== undefined && laps.data !== undefined
-      ? { profile, raceId, driverId, lap, model: selection.model }
+    raceId !== undefined && driverId !== undefined && laps.data !== undefined && models.data !== undefined
+      ? { profile, raceId, driverId, lap, model }
       : undefined;
   const state = useTyreState(decision);
   const pitWindow = usePitWindow(
@@ -45,7 +48,7 @@ export function PitWallPage({ profile }: { profile: Profile }) {
       race_id: decision.raceId,
       driver_id: decision.driverId,
       lap,
-      model: selection.model ?? null,
+      model: model ?? null,
       profile,
     },
   );
@@ -53,9 +56,19 @@ export function PitWallPage({ profile }: { profile: Profile }) {
   const [pitLapOverride, setPitLapOverride] = useState<number | undefined>(undefined);
   const optimal = pitWindow.data?.optimal_lap ?? undefined;
   const pitLap = Math.min(Math.max(pitLapOverride ?? optimal ?? lap + 1, lap + 1), totalLaps - 1);
+  // The counterfactual fits the set the optimal plan chooses at its first stop.
+  const planCompound = pitWindow.data?.plan[0]?.compound ?? null;
   const counterfactual = useCounterfactual(
     decision && pitLap > lap && pitLap < totalLaps
-      ? { race_id: decision.raceId, driver_id: decision.driverId, lap, pit_lap: pitLap, model: selection.model ?? null, profile }
+      ? {
+          race_id: decision.raceId,
+          driver_id: decision.driverId,
+          lap,
+          pit_lap: pitLap,
+          model: model ?? null,
+          profile,
+          replacement_compound: planCompound,
+        }
       : undefined,
   );
 
@@ -74,6 +87,7 @@ export function PitWallPage({ profile }: { profile: Profile }) {
             races={races.data}
             drivers={drivers.data ?? []}
             models={models.data}
+            defaultModel={strategyModel}
             maxLap={totalLaps}
           />
         ) : (
@@ -111,11 +125,23 @@ export function PitWallPage({ profile }: { profile: Profile }) {
           title="Pit cost curve"
           subtitle={
             pitWindow.data
-              ? `Seconds lost vs the best pit lap · new ${pitWindow.data.replacement_compound} · pit loss ${pitWindow.data.pit_loss_s.toFixed(1)} s${pitWindow.data.stay_out_feasible ? "" : " · must stop (two-compound rule)"}`
+              ? `Seconds lost vs the best pit lap · first stop on ${pitWindow.data.replacement_compound} · pit loss ${pitWindow.data.pit_loss_s.toFixed(1)} s${pitWindow.data.stay_out_feasible ? "" : " · must stop (two-compound rule)"}`
               : "Seconds lost vs the best pit lap"
           }
         >
-          {pitWindow.data ? <PitCostChart result={pitWindow.data} /> : <StatusMessage loading={pitWindow.isPending} error={pitWindow.error} />}
+          {pitWindow.data ? (
+            <>
+              <PitCostChart result={pitWindow.data} />
+              <p className="tabular mt-1 text-xs text-[var(--text-muted)]">
+                {pitWindow.data.plan.length > 0
+                  ? `Best plan: ${planLabel(pitWindow.data.plan)} (${pitWindow.data.plan.length} stop${pitWindow.data.plan.length > 1 ? "s" : ""} from here)`
+                  : "No pit stop left to plan."}
+                {` · margin ${pitWindow.data.assumptions.margin_sigma.toFixed(2)}σ (${pitWindow.data.assumptions.margin_source})`}
+              </p>
+            </>
+          ) : (
+            <StatusMessage loading={pitWindow.isPending} error={pitWindow.error} />
+          )}
         </Card>
         <Card
           title="Counterfactual: box on lap X vs stay out"

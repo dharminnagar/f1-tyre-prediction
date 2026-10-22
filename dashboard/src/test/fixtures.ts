@@ -7,6 +7,7 @@ import type {
   ProfileInfo,
   ProfileMetrics,
   RaceSummary,
+  ThresholdRow,
   TyreState,
 } from "../api/client";
 
@@ -17,6 +18,7 @@ export const profiles: ProfileInfo[] = [
     config_hash: "abc",
     dataset_hash: "def",
     selected_model: "poly_ridge",
+    strategy_selected_model: "poly_ridge",
     train_seasons: [2019, 2023],
     val_seasons: [2024],
     test_seasons: [2025],
@@ -75,9 +77,9 @@ export const laps: LapRecord[] = Array.from({ length: 30 }, (_, i) => {
 });
 
 export const models: ModelInfo[] = [
-  { name: "baseline_curve", features: [], selected: false, coefficients: null, importances: null, val_mae_s: 0.5, test_mae_s: 0.55, tyre_age_cap: { SOFT: 25 } },
-  { name: "poly_ridge", features: [], selected: true, coefficients: null, importances: null, val_mae_s: 0.46, test_mae_s: 0.5, tyre_age_cap: { SOFT: 25 } },
-  { name: "hgb", features: [], selected: false, coefficients: null, importances: null, val_mae_s: 0.47, test_mae_s: 0.48, tyre_age_cap: { SOFT: 25 } },
+  { name: "baseline_curve", features: [], selected: false, selected_for_strategy: false, coefficients: null, importances: null, val_mae_s: 0.5, test_mae_s: 0.55, tyre_age_cap: { SOFT: 25 } },
+  { name: "poly_ridge", features: [], selected: true, selected_for_strategy: true, coefficients: null, importances: null, val_mae_s: 0.46, test_mae_s: 0.5, tyre_age_cap: { SOFT: 25 } },
+  { name: "hgb", features: [], selected: false, selected_for_strategy: false, coefficients: null, importances: null, val_mae_s: 0.47, test_mae_s: 0.48, tyre_age_cap: { SOFT: 25 } },
 ];
 
 export const state: TyreState = {
@@ -90,13 +92,14 @@ export const state: TyreState = {
   stint_id: 1,
   stint_lap: 8,
   degradation: { empirical_s_per_lap: 0.081, model_s_per_lap: 0.075, acceleration_s_per_lap2: 0.001 },
-  next_lap: { lap: 9, pred_s: 80.72, lo_s: 80.1, hi_s: 81.3, extrapolated: false },
+  next_lap: { lap: 9, pred_s: 80.72, lo_s: 80.1, hi_s: 81.3, extrapolated: false, method: "sigma" },
   next_laps: [9, 10, 11, 12, 13].map((lap, i) => ({
     lap,
     pred_s: 80.72 + i * 0.08,
     lo_s: 80.1 + i * 0.08,
     hi_s: 81.3 + i * 0.08,
     extrapolated: false,
+    method: "sigma" as const,
   })),
   remaining_competitive_laps: { value: 7, threshold_s: 1, reference_s: 80.2, capped_by_race_end: false },
   decomposition: { field_ref_s: 79.5, driver_offset_s: 0.3, tyre_s: 0.4, fuel_s: 1.05, context_s: -0.53, total_s: 80.72 },
@@ -108,10 +111,24 @@ export const pitWindow: PitWindowResponse = {
   candidates: Array.from({ length: 21 }, (_, i) => {
     const pitLap = 9 + i;
     const cost = 2400 + (pitLap - 14) ** 2 * 0.1;
-    return { pit_lap: pitLap, cost_pit_s: cost, cost_stay_out_s: 2420, advantage_s: 2420 - cost, margin_s: 1, in_window: Math.abs(pitLap - 14) <= 3, extrapolated: false };
+    const lapsPastCap = Math.max(0, pitLap - 26);
+    return {
+      pit_lap: pitLap,
+      cost_pit_s: cost,
+      cost_stay_out_s: 2420,
+      advantage_s: 2420 - cost,
+      margin_s: 1,
+      in_window: Math.abs(pitLap - 14) <= 3,
+      laps_past_cap: lapsPastCap,
+      extrapolated: lapsPastCap > 0,
+    };
   }),
   window: { start_lap: 11, end_lap: 17 },
   optimal_lap: 14,
+  plan: [
+    { lap: 14, compound: "MEDIUM" },
+    { lap: 22, compound: "HARD" },
+  ],
   stay_out_feasible: false,
   replacement_compound: "MEDIUM",
   pit_loss_s: 23.2,
@@ -121,7 +138,8 @@ export const pitWindow: PitWindowResponse = {
     pit_loss_source: "estimated",
     warmup_s: 0,
     fuel_s_per_lap: 0.05,
-    margin_sigma: 1,
+    margin_sigma: 0.5,
+    margin_source: "calibrated",
     threshold_s: 1,
     reference_tyre_age: 3,
     replacement_rule: "actual next",
@@ -150,13 +168,76 @@ export function profileMetrics(profile: "subset" | "full", offset: number): Prof
     ],
     horizon: [{ model: "poly_ridge", split: "val", k: 1, mae: 0.46, n: 100 }],
     loro_cv: [],
-    loro_cv_summary: [{ model: "poly_ridge", mean: 0.6, std: 0.05 }],
+    loro_cv_summary: [
+      { model: "poly_ridge", mean: 0.6, std: 0.05, status: "run" },
+      { model: "lstm", mean: null, std: null, status: "not_run" },
+    ],
     cumulative_stint: [],
     ablation_deg_features: [],
     fuel_sensitivity: [],
     pit_loss: { median_s: 23.16, q25_s: 22, q75_s: 24, n_stops: 190, races: [] },
     stint_verification: { match_rate: 0.99, n_stops: 301, by_race: {} },
     pit_timing_in_window_rate: 0.26,
+    pit_timing_summary: {
+      val: {
+        n: 42,
+        in_window_rate: 0.6,
+        n_kept: 40,
+        in_window_rate_kept: 0.62,
+        excluded: { neutralised: 2 },
+        in_window_rate_kept_by_stint: { "1": 0.6 },
+        median_width_kept: 9,
+        no_window_share_kept: 0.05,
+        optimum_bias_kept_by_stint: { "1": 4 },
+        near_optimum_past_cap_share_kept: 0.1,
+      },
+    },
+    normalisation_sensitivity: [
+      { normalisation: "field", model: "poly_ridge", val_mae: 0.452, test_mae: 0.49, held_out_rollout_s_per_lap: 0.073 },
+      { normalisation: "teammate", model: "poly_ridge", val_mae: 0.47, test_mae: 0.5, held_out_rollout_s_per_lap: 0.07 },
+    ],
+    calibrated_margin_sigma: 0.5,
+    window_target_coverage: 0.5,
+    margin_calibration: [{ margin_sigma: 0.5, in_window_rate: 0.55, median_width_laps: 9, n: 40 }],
+    interval_coverage: [
+      { model: "hgb", split: "val", target: "next_lap", method: "quantile", coverage: 0.8, mean_width_s: 1.46, n: 1205 },
+      { model: "hgb", split: "test", target: "next_lap", method: "quantile", coverage: 0.7, mean_width_s: 1.28, n: 972 },
+      { model: "poly_ridge", split: "test", target: "next_lap", method: "sigma", coverage: 0.83, mean_width_s: 1.65, n: 972 },
+    ],
+    sequence_cell_comparison: (["lstm", "gru"] as const).map((cell) => ({
+      cell,
+      split: "val" as const,
+      next_lap_mae: 0.459,
+      next_n_mean_mae: 0.39,
+      n: 5,
+      horizon_k: 20,
+      horizon_k_mae: 0.68,
+      rollout_s_per_lap_held_out: 0.045,
+      rollout_s_per_lap_train: 0.044,
+      train_seconds: 12,
+      best_epoch: 25,
+    })),
+    pit_timing_by_model: [],
     train_races: profile === "subset" ? 5 : 19,
   };
 }
+
+function thresholdRow(decision: ThresholdRow["decision"], threshold: number, mae: number): ThresholdRow {
+  return {
+    decision,
+    threshold_s: threshold,
+    model: "poly_ridge",
+    mae_laps: mae,
+    bias_laps: 0.5,
+    n_uncensored: 20,
+    n_censored: 60,
+    censored_consistency: 0.8,
+    n_total: 80,
+  };
+}
+
+export const thresholdRows: ThresholdRow[] = [
+  thresholdRow("stint_lap_5", 1, 3.2),
+  thresholdRow("stint_lap_5", 0.5, 2.1),
+  thresholdRow("all", 1, 4.4),
+];

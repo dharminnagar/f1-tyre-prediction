@@ -19,6 +19,7 @@ export const MODEL_COLOR: Record<ModelName, string> = {
   baseline_curve: "var(--series-3)",
   poly_ridge: "var(--series-1)",
   hgb: "var(--series-2)",
+  lstm: "var(--series-4)",
 };
 
-export const MODEL_ORDER: readonly ModelName[] = ["baseline_curve", "poly_ridge", "hgb"];
+export const MODEL_ORDER: readonly ModelName[] = ["baseline_curve", "poly_ridge", "hgb", "lstm"];
