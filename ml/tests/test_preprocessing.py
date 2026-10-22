@@ -3,7 +3,7 @@ import pytest
 
 from boxbox.config import Config
 from boxbox.preprocessing.build import dataset_hash
-from boxbox.preprocessing.cleaning import flag_laps
+from boxbox.preprocessing.cleaning import field_slow_laps, flag_laps, wet_laps
 from boxbox.preprocessing.stints import (
     apply_inferred_pit_laps,
     infer_pit_laps,
@@ -122,7 +122,8 @@ def test_each_exclusion_reason(reason: str, cfg: Config) -> None:
         modified.loc[target, "is_accurate"] = False
         expected_lap = 7
     elif reason == "wet":
-        modified.loc[target, "rainfall"] = True
+        delta = modified["driver_id"] == "delta"
+        modified.loc[delta & modified["lap"].isin([6, 7]), "rainfall"] = True
         expected_lap = 7
     else:
         modified.loc[target, "lap_time_s"] = 95.0
@@ -130,6 +131,25 @@ def test_each_exclusion_reason(reason: str, cfg: Config) -> None:
     flagged = flag_laps(modified, cfg)
     assert len(flagged) == len(base)
     assert _reason_at(flagged, "delta", expected_lap) == reason
+
+
+def test_single_rain_sample_with_normal_times_stays_clean(cfg: Config) -> None:
+    base = canonical_pipeline(*synthetic_race(), cfg).drop(
+        columns=["is_clean", "exclusion_reason", "track_neutralised"]
+    )
+    rained = base.assign(rainfall=base["lap"] == 7)
+    flagged = flag_laps(rained, cfg)
+    clean_before = flag_laps(base, cfg)["is_clean"]
+    assert flagged["is_clean"].equals(clean_before)
+
+
+def test_rain_on_a_slow_field_lap_is_wet(cfg: Config) -> None:
+    base = canonical_pipeline(*synthetic_race(), cfg).drop(
+        columns=["is_clean", "exclusion_reason", "track_neutralised"]
+    )
+    flagged = flag_laps(base.assign(rainfall=base["lap"] == 7), cfg)
+    assert wet_laps(flagged, field_slow_laps(flagged, 1.0)).loc[flagged["lap"] == 7].all()
+    assert not wet_laps(flagged, field_slow_laps(flagged, 1.25)).any()
 
 
 def test_dataset_hash_is_order_independent(synthetic_laps: pd.DataFrame) -> None:

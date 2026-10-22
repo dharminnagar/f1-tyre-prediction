@@ -43,12 +43,46 @@ def _rolling_field_median(laps: pd.DataFrame, eligible: pd.Series, window: int) 
     return pd.Series(lookup["rolling_median"].to_numpy(), index=laps.index)
 
 
+WET_COMPOUNDS = ("INTERMEDIATE", "WET")
+
+
+def wet_laps(laps: pd.DataFrame, field_slow: pd.Series) -> pd.Series:
+    """Wet = intermediate/wet tyres, or rain confirmed by a second signal.
+
+    A single weather sample reporting rain (OpenF1 weather is matched to laps by time, so one
+    sample can flag every driver's lap) is not enough: rain also needs the driver's previous
+    lap to be rainy or the field to be abnormally slow on that lap. Only earlier laps are
+    used, so the flag stays causal.
+    """
+    wet_tyres = (
+        laps["compound_raw"].astype("string").str.upper().isin(WET_COMPOUNDS).fillna(value=False)
+    )
+    rain = laps["rainfall"].fillna(value=False).astype(bool)
+    rainy_keys = set(
+        zip(
+            laps.loc[rain, "race_id"],
+            laps.loc[rain, "driver_id"],
+            laps.loc[rain, "lap"],
+            strict=True,
+        )
+    )
+    previous_rain = pd.Series(
+        [
+            (r, d, lap - 1) in rainy_keys
+            for r, d, lap in zip(laps["race_id"], laps["driver_id"], laps["lap"], strict=True)
+        ],
+        index=laps.index,
+        dtype=bool,
+    )
+    return wet_tyres.astype(bool) | (rain & (previous_rain | field_slow))
+
+
 def flag_laps(laps: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     """Add ``track_neutralised``, ``is_clean`` and ``exclusion_reason`` (no rows dropped).
 
     Rules (first match wins, in ``EXCLUSION_REASONS`` order): missing time, lap 1, pit in/out,
     SC/VSC/red track status, field-slow heuristic, the lap after a neutralisation, inaccurate
-    timing, wet (rain or intermediate/wet tyres), and > ``outlier_pct`` of the causal rolling
+    timing, wet (see :func:`wet_laps`), and > ``outlier_pct`` of the causal rolling
     field median of otherwise-clean laps.
     """
     df = laps.copy()
@@ -63,9 +97,7 @@ def flag_laps(laps: pd.DataFrame, cfg: Config) -> pd.DataFrame:
         ],
         index=df.index,
     )
-    wet = df["rainfall"].astype(bool) | df["compound_raw"].astype("string").str.upper().isin(
-        ["INTERMEDIATE", "WET"]
-    ).fillna(value=False)
+    wet = wet_laps(df, field_slow)
 
     conditions: dict[str, pd.Series] = {
         "missing_time": df["lap_time_s"].isna(),
