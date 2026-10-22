@@ -8,7 +8,10 @@ from boxbox.config import Profile
 from boxbox.schema import Compound, ModelName, Split
 
 GroupBy = Literal["compound", "race", "stint_length"]
-Target = Literal["next_lap", "next_5_mean", "next_3_mean"]
+Target = Literal["next_lap", "next_5_mean", "next_3_mean", "next_10_mean"]
+PitTimingExclusion = Literal["retirement", "neutralised", "short_stint"]
+DecisionMode = Literal["stint_lap_5", "all"]
+IntervalMethod = Literal["quantile", "sigma"]
 
 
 class ApiModel(BaseModel):
@@ -23,6 +26,7 @@ class Health(ApiModel):
     profiles: list[Profile]
     default_profile: Profile
     selected_model: ModelName
+    strategy_selected_model: ModelName
 
 
 class ProfileInfo(ApiModel):
@@ -31,6 +35,7 @@ class ProfileInfo(ApiModel):
     config_hash: str
     dataset_hash: str
     selected_model: ModelName
+    strategy_selected_model: ModelName
     train_seasons: list[int]
     val_seasons: list[int]
     test_seasons: list[int]
@@ -88,6 +93,7 @@ class ModelInfo(ApiModel):
     name: ModelName
     features: list[str]
     selected: bool
+    selected_for_strategy: bool
     coefficients: dict[str, float] | None
     importances: dict[str, float] | None
     val_mae_s: float | None
@@ -98,9 +104,12 @@ class ModelInfo(ApiModel):
 class Interval(ApiModel):
     lap: int
     pred_s: float
-    lo_s: float
-    hi_s: float
+    lo_s: float = Field(description="Lower bound of the 80% interval")
+    hi_s: float = Field(description="Upper bound of the 80% interval")
     extrapolated: bool
+    method: IntervalMethod = Field(
+        description="quantile = HGB quantile companions; sigma = ±z x validation error sigma"
+    )
 
 
 class Degradation(ApiModel):
@@ -154,6 +163,11 @@ class PitWindowRequest(ApiModel):
     warmup_s: float | None = Field(default=None, ge=0, le=5)
 
 
+class PlannedStopOut(ApiModel):
+    lap: int = Field(description="In-lap of the stop")
+    compound: Compound = Field(description="Fresh set fitted at this stop")
+
+
 class PitCandidateOut(ApiModel):
     pit_lap: int
     cost_pit_s: float
@@ -161,7 +175,10 @@ class PitCandidateOut(ApiModel):
     advantage_s: float
     margin_s: float
     in_window: bool
-    extrapolated: bool
+    laps_past_cap: int = Field(
+        description="Laps of this candidate's plan run beyond the model's training tyre-age cap"
+    )
+    extrapolated: bool = Field(description="laps_past_cap > 0")
 
 
 class LapWindow(ApiModel):
@@ -175,6 +192,7 @@ class Assumptions(ApiModel):
     warmup_s: float
     fuel_s_per_lap: float
     margin_sigma: float
+    margin_source: Literal["calibrated", "config"]
     threshold_s: float
     reference_tyre_age: int
     replacement_rule: str
@@ -185,6 +203,9 @@ class PitWindowResponse(ApiModel):
     candidates: list[PitCandidateOut]
     window: LapWindow | None
     optimal_lap: int | None
+    plan: list[PlannedStopOut] = Field(
+        description="Cheapest stop sequence when boxing on the optimal lap (first stop first)"
+    )
     stay_out_feasible: bool
     replacement_compound: Compound
     pit_loss_s: float
@@ -241,8 +262,11 @@ class LoroRow(ApiModel):
 
 class LoroSummary(ApiModel):
     model: ModelName
-    mean: float
+    mean: float | None
     std: float | None
+    status: Literal["run", "not_run"] = Field(
+        default="run", description="not_run = LORO-CV skipped for this model (config flag)"
+    )
 
 
 class CumulativeStintRow(ApiModel):
@@ -257,6 +281,65 @@ class AblationRow(ApiModel):
     model: str
     split: Split
     mae: float
+    n: int
+
+
+class NormalisationSensitivityRow(ApiModel):
+    normalisation: Literal["field", "teammate"]
+    model: ModelName
+    val_mae: float | None
+    test_mae: float | None
+    held_out_rollout_s_per_lap: float | None
+
+
+class PitTimingSplitSummary(ApiModel):
+    n: int
+    in_window_rate: float | None
+    n_kept: int
+    in_window_rate_kept: float | None
+    excluded: dict[str, int]
+    in_window_rate_kept_by_stint: dict[str, float | None]
+    median_width_kept: float | None = None
+    no_window_share_kept: float | None = None
+    optimum_bias_kept_by_stint: dict[str, float | None] = Field(default_factory=dict)
+    near_optimum_past_cap_share_kept: float | None = None
+    optimum_past_cap_share_kept: float | None = None
+
+
+class IntervalCoverageRow(ApiModel):
+    model: ModelName
+    split: Split
+    target: str = Field(description="next_lap, next_{n}_laps (each lap) or next_{n}_mean")
+    method: IntervalMethod
+    coverage: float | None = Field(description="Share of actual lap times inside the interval")
+    mean_width_s: float | None
+    n: int
+
+
+class SequenceCellRow(ApiModel):
+    cell: Literal["lstm", "gru"]
+    split: Split
+    next_lap_mae: float | None
+    next_n_mean_mae: float | None
+    n: int
+    horizon_k: int
+    horizon_k_mae: float | None
+    rollout_s_per_lap_held_out: float | None
+    rollout_s_per_lap_train: float | None
+    train_seconds: float
+    best_epoch: int
+
+
+class PitTimingByModelRow(ApiModel):
+    model: ModelName
+    calibrated_margin_sigma: float
+    summary: dict[str, PitTimingSplitSummary]
+
+
+class MarginCalibrationRow(ApiModel):
+    margin_sigma: float
+    in_window_rate: float | None
+    median_width_laps: float | None
     n: int
 
 
@@ -295,6 +378,14 @@ class ProfileMetrics(ApiModel):
     pit_loss: PitLossOut
     stint_verification: StintVerificationOut
     pit_timing_in_window_rate: float | None
+    pit_timing_summary: dict[str, PitTimingSplitSummary]
+    normalisation_sensitivity: list[NormalisationSensitivityRow]
+    calibrated_margin_sigma: float | None
+    window_target_coverage: float | None
+    margin_calibration: list[MarginCalibrationRow]
+    interval_coverage: list[IntervalCoverageRow]
+    sequence_cell_comparison: list[SequenceCellRow]
+    pit_timing_by_model: list[PitTimingByModelRow]
     train_races: int
 
 
@@ -322,10 +413,16 @@ class ErrorGroupRow(ApiModel):
 
 
 class ThresholdRow(ApiModel):
+    decision: DecisionMode
     threshold_s: float
     model: ModelName
     mae_laps: float | None
+    bias_laps: float | None
     n_uncensored: int
+    n_censored: int
+    censored_consistency: float | None = Field(
+        description="Share of censored stints where the predicted life reaches the stint end"
+    )
     n_total: int
 
 
@@ -339,6 +436,11 @@ class PitTimingRow(ApiModel):
     window_end: int | None
     optimal_lap: int | None
     actual_in_window: bool
+    split: Split | None = None
+    excluded_reason: PitTimingExclusion | None = None
+    planned_stops: int | None = None
+    optimum_laps_past_cap: int | None = None
+    near_optimum_past_cap_share: float | None = None
 
 
 class CurvePoint(ApiModel):

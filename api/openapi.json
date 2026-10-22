@@ -266,7 +266,7 @@
           "meta"
         ],
         "summary": "Models",
-        "description": "Models with features, held-out MAE and interpretable parameters.",
+        "description": "Models with features, held-out MAE, interpretable parameters and selection flags.",
         "operationId": "models_api_models_get",
         "parameters": [
           {
@@ -368,7 +368,8 @@
                   "enum": [
                     "baseline_curve",
                     "poly_ridge",
-                    "hgb"
+                    "hgb",
+                    "lstm"
                   ],
                   "type": "string"
                 },
@@ -580,7 +581,8 @@
                   "enum": [
                     "baseline_curve",
                     "poly_ridge",
-                    "hgb"
+                    "hgb",
+                    "lstm"
                   ],
                   "type": "string"
                 },
@@ -678,7 +680,8 @@
                   "enum": [
                     "baseline_curve",
                     "poly_ridge",
-                    "hgb"
+                    "hgb",
+                    "lstm"
                   ],
                   "type": "string"
                 },
@@ -748,7 +751,7 @@
           "evaluation"
         ],
         "summary": "Threshold Sensitivity",
-        "description": "Remaining-life MAE (laps) for each competitive threshold and model.",
+        "description": "Remaining-life MAE/bias (laps) per decision mode, competitive threshold and model.",
         "operationId": "threshold_sensitivity_api_evaluation_threshold_sensitivity_get",
         "parameters": [
           {
@@ -1018,6 +1021,14 @@
             "type": "number",
             "title": "Margin Sigma"
           },
+          "margin_source": {
+            "type": "string",
+            "enum": [
+              "calibrated",
+              "config"
+            ],
+            "title": "Margin Source"
+          },
           "threshold_s": {
             "type": "number",
             "title": "Threshold S"
@@ -1039,6 +1050,7 @@
           "warmup_s",
           "fuel_s_per_lap",
           "margin_sigma",
+          "margin_source",
           "threshold_s",
           "reference_tyre_age",
           "replacement_rule"
@@ -1072,7 +1084,8 @@
                 "enum": [
                   "baseline_curve",
                   "poly_ridge",
-                  "hgb"
+                  "hgb",
+                  "lstm"
                 ]
               },
               {
@@ -1201,7 +1214,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },
@@ -1461,7 +1475,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },
@@ -1537,9 +1552,20 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Selected Model"
+          },
+          "strategy_selected_model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb",
+              "lstm"
+            ],
+            "title": "Strategy Selected Model"
           }
         },
         "additionalProperties": false,
@@ -1549,7 +1575,8 @@
           "artifacts_version",
           "profiles",
           "default_profile",
-          "selected_model"
+          "selected_model",
+          "strategy_selected_model"
         ],
         "title": "Health"
       },
@@ -1560,7 +1587,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },
@@ -1609,15 +1637,26 @@
           },
           "lo_s": {
             "type": "number",
-            "title": "Lo S"
+            "title": "Lo S",
+            "description": "Lower bound of the 80% interval"
           },
           "hi_s": {
             "type": "number",
-            "title": "Hi S"
+            "title": "Hi S",
+            "description": "Upper bound of the 80% interval"
           },
           "extrapolated": {
             "type": "boolean",
             "title": "Extrapolated"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "quantile",
+              "sigma"
+            ],
+            "title": "Method",
+            "description": "quantile = HGB quantile companions; sigma = \u00b1z x validation error sigma"
           }
         },
         "additionalProperties": false,
@@ -1627,9 +1666,85 @@
           "pred_s",
           "lo_s",
           "hi_s",
-          "extrapolated"
+          "extrapolated",
+          "method"
         ],
         "title": "Interval"
+      },
+      "IntervalCoverageRow": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb",
+              "lstm"
+            ],
+            "title": "Model"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target",
+            "description": "next_lap, next_{n}_laps (each lap) or next_{n}_mean"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "quantile",
+              "sigma"
+            ],
+            "title": "Method"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage",
+            "description": "Share of actual lap times inside the interval"
+          },
+          "mean_width_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Width S"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "split",
+          "target",
+          "method",
+          "coverage",
+          "mean_width_s",
+          "n"
+        ],
+        "title": "IntervalCoverageRow"
       },
       "LapRecord": {
         "properties": {
@@ -1783,7 +1898,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },
@@ -1817,12 +1933,20 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },
           "mean": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Mean"
           },
           "std": {
@@ -1835,6 +1959,16 @@
               }
             ],
             "title": "Std"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "run",
+              "not_run"
+            ],
+            "title": "Status",
+            "description": "not_run = LORO-CV skipped for this model (config flag)",
+            "default": "run"
           }
         },
         "additionalProperties": false,
@@ -1845,6 +1979,49 @@
           "std"
         ],
         "title": "LoroSummary"
+      },
+      "MarginCalibrationRow": {
+        "properties": {
+          "margin_sigma": {
+            "type": "number",
+            "title": "Margin Sigma"
+          },
+          "in_window_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Window Rate"
+          },
+          "median_width_laps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Width Laps"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "margin_sigma",
+          "in_window_rate",
+          "median_width_laps",
+          "n"
+        ],
+        "title": "MarginCalibrationRow"
       },
       "MetricRow": {
         "properties": {
@@ -1866,7 +2043,8 @@
             "enum": [
               "next_lap",
               "next_5_mean",
-              "next_3_mean"
+              "next_3_mean",
+              "next_10_mean"
             ],
             "title": "Target"
           },
@@ -1957,7 +2135,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Name"
           },
@@ -1971,6 +2150,10 @@
           "selected": {
             "type": "boolean",
             "title": "Selected"
+          },
+          "selected_for_strategy": {
+            "type": "boolean",
+            "title": "Selected For Strategy"
           },
           "coefficients": {
             "anyOf": [
@@ -2036,6 +2219,7 @@
           "name",
           "features",
           "selected",
+          "selected_for_strategy",
           "coefficients",
           "importances",
           "val_mae_s",
@@ -2043,6 +2227,71 @@
           "tyre_age_cap"
         ],
         "title": "ModelInfo"
+      },
+      "NormalisationSensitivityRow": {
+        "properties": {
+          "normalisation": {
+            "type": "string",
+            "enum": [
+              "field",
+              "teammate"
+            ],
+            "title": "Normalisation"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb",
+              "lstm"
+            ],
+            "title": "Model"
+          },
+          "val_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Val Mae"
+          },
+          "test_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Mae"
+          },
+          "held_out_rollout_s_per_lap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held Out Rollout S Per Lap"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "normalisation",
+          "model",
+          "val_mae",
+          "test_mae",
+          "held_out_rollout_s_per_lap"
+        ],
+        "title": "NormalisationSensitivityRow"
       },
       "PitCandidateOut": {
         "properties": {
@@ -2070,9 +2319,15 @@
             "type": "boolean",
             "title": "In Window"
           },
+          "laps_past_cap": {
+            "type": "integer",
+            "title": "Laps Past Cap",
+            "description": "Laps of this candidate's plan run beyond the model's training tyre-age cap"
+          },
           "extrapolated": {
             "type": "boolean",
-            "title": "Extrapolated"
+            "title": "Extrapolated",
+            "description": "laps_past_cap > 0"
           }
         },
         "additionalProperties": false,
@@ -2084,6 +2339,7 @@
           "advantage_s",
           "margin_s",
           "in_window",
+          "laps_past_cap",
           "extrapolated"
         ],
         "title": "PitCandidateOut"
@@ -2124,6 +2380,39 @@
           "races"
         ],
         "title": "PitLossOut"
+      },
+      "PitTimingByModelRow": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb",
+              "lstm"
+            ],
+            "title": "Model"
+          },
+          "calibrated_margin_sigma": {
+            "type": "number",
+            "title": "Calibrated Margin Sigma"
+          },
+          "summary": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PitTimingSplitSummary"
+            },
+            "type": "object",
+            "title": "Summary"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model",
+          "calibrated_margin_sigma",
+          "summary"
+        ],
+        "title": "PitTimingByModelRow"
       },
       "PitTimingRow": {
         "properties": {
@@ -2183,6 +2472,71 @@
           "actual_in_window": {
             "type": "boolean",
             "title": "Actual In Window"
+          },
+          "split": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "train",
+                  "val",
+                  "test"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split"
+          },
+          "excluded_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "retirement",
+                  "neutralised",
+                  "short_stint"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excluded Reason"
+          },
+          "planned_stops": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Stops"
+          },
+          "optimum_laps_past_cap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimum Laps Past Cap"
+          },
+          "near_optimum_past_cap_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Near Optimum Past Cap Share"
           }
         },
         "additionalProperties": false,
@@ -2199,6 +2553,130 @@
           "actual_in_window"
         ],
         "title": "PitTimingRow"
+      },
+      "PitTimingSplitSummary": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "in_window_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Window Rate"
+          },
+          "n_kept": {
+            "type": "integer",
+            "title": "N Kept"
+          },
+          "in_window_rate_kept": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Window Rate Kept"
+          },
+          "excluded": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Excluded"
+          },
+          "in_window_rate_kept_by_stint": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "In Window Rate Kept By Stint"
+          },
+          "median_width_kept": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Width Kept"
+          },
+          "no_window_share_kept": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "No Window Share Kept"
+          },
+          "optimum_bias_kept_by_stint": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Optimum Bias Kept By Stint"
+          },
+          "near_optimum_past_cap_share_kept": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Near Optimum Past Cap Share Kept"
+          },
+          "optimum_past_cap_share_kept": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Optimum Past Cap Share Kept"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "n",
+          "in_window_rate",
+          "n_kept",
+          "in_window_rate_kept",
+          "excluded",
+          "in_window_rate_kept_by_stint"
+        ],
+        "title": "PitTimingSplitSummary"
       },
       "PitWindowRequest": {
         "properties": {
@@ -2222,7 +2700,8 @@
                 "enum": [
                   "baseline_curve",
                   "poly_ridge",
-                  "hgb"
+                  "hgb",
+                  "lstm"
                 ]
               },
               {
@@ -2318,7 +2797,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },
@@ -2349,6 +2829,14 @@
               }
             ],
             "title": "Optimal Lap"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedStopOut"
+            },
+            "type": "array",
+            "title": "Plan",
+            "description": "Cheapest stop sequence when boxing on the optimal lap (first stop first)"
           },
           "stay_out_feasible": {
             "type": "boolean",
@@ -2392,6 +2880,7 @@
           "candidates",
           "window",
           "optimal_lap",
+          "plan",
           "stay_out_feasible",
           "replacement_compound",
           "pit_loss_s",
@@ -2400,6 +2889,32 @@
           "explanation"
         ],
         "title": "PitWindowResponse"
+      },
+      "PlannedStopOut": {
+        "properties": {
+          "lap": {
+            "type": "integer",
+            "title": "Lap",
+            "description": "In-lap of the stop"
+          },
+          "compound": {
+            "type": "string",
+            "enum": [
+              "SOFT",
+              "MEDIUM",
+              "HARD"
+            ],
+            "title": "Compound",
+            "description": "Fresh set fitted at this stop"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "lap",
+          "compound"
+        ],
+        "title": "PlannedStopOut"
       },
       "PredictionRow": {
         "properties": {
@@ -2472,9 +2987,20 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Selected Model"
+          },
+          "strategy_selected_model": {
+            "type": "string",
+            "enum": [
+              "baseline_curve",
+              "poly_ridge",
+              "hgb",
+              "lstm"
+            ],
+            "title": "Strategy Selected Model"
           },
           "train_seasons": {
             "items": {
@@ -2510,6 +3036,7 @@
           "config_hash",
           "dataset_hash",
           "selected_model",
+          "strategy_selected_model",
           "train_seasons",
           "val_seasons",
           "test_seasons",
@@ -2532,7 +3059,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Selected Model"
           },
@@ -2606,6 +3134,70 @@
             ],
             "title": "Pit Timing In Window Rate"
           },
+          "pit_timing_summary": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PitTimingSplitSummary"
+            },
+            "type": "object",
+            "title": "Pit Timing Summary"
+          },
+          "normalisation_sensitivity": {
+            "items": {
+              "$ref": "#/components/schemas/NormalisationSensitivityRow"
+            },
+            "type": "array",
+            "title": "Normalisation Sensitivity"
+          },
+          "calibrated_margin_sigma": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibrated Margin Sigma"
+          },
+          "window_target_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Target Coverage"
+          },
+          "margin_calibration": {
+            "items": {
+              "$ref": "#/components/schemas/MarginCalibrationRow"
+            },
+            "type": "array",
+            "title": "Margin Calibration"
+          },
+          "interval_coverage": {
+            "items": {
+              "$ref": "#/components/schemas/IntervalCoverageRow"
+            },
+            "type": "array",
+            "title": "Interval Coverage"
+          },
+          "sequence_cell_comparison": {
+            "items": {
+              "$ref": "#/components/schemas/SequenceCellRow"
+            },
+            "type": "array",
+            "title": "Sequence Cell Comparison"
+          },
+          "pit_timing_by_model": {
+            "items": {
+              "$ref": "#/components/schemas/PitTimingByModelRow"
+            },
+            "type": "array",
+            "title": "Pit Timing By Model"
+          },
           "train_races": {
             "type": "integer",
             "title": "Train Races"
@@ -2627,6 +3219,14 @@
           "pit_loss",
           "stint_verification",
           "pit_timing_in_window_rate",
+          "pit_timing_summary",
+          "normalisation_sensitivity",
+          "calibrated_margin_sigma",
+          "window_target_coverage",
+          "margin_calibration",
+          "interval_coverage",
+          "sequence_cell_comparison",
+          "pit_timing_by_model",
           "train_races"
         ],
         "title": "ProfileMetrics"
@@ -2719,6 +3319,114 @@
         ],
         "title": "RemainingLifeOut"
       },
+      "SequenceCellRow": {
+        "properties": {
+          "cell": {
+            "type": "string",
+            "enum": [
+              "lstm",
+              "gru"
+            ],
+            "title": "Cell"
+          },
+          "split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "title": "Split"
+          },
+          "next_lap_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Lap Mae"
+          },
+          "next_n_mean_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next N Mean Mae"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "horizon_k": {
+            "type": "integer",
+            "title": "Horizon K"
+          },
+          "horizon_k_mae": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Horizon K Mae"
+          },
+          "rollout_s_per_lap_held_out": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout S Per Lap Held Out"
+          },
+          "rollout_s_per_lap_train": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollout S Per Lap Train"
+          },
+          "train_seconds": {
+            "type": "number",
+            "title": "Train Seconds"
+          },
+          "best_epoch": {
+            "type": "integer",
+            "title": "Best Epoch"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "cell",
+          "split",
+          "next_lap_mae",
+          "next_n_mean_mae",
+          "n",
+          "horizon_k",
+          "horizon_k_mae",
+          "rollout_s_per_lap_held_out",
+          "rollout_s_per_lap_train",
+          "train_seconds",
+          "best_epoch"
+        ],
+        "title": "SequenceCellRow"
+      },
       "StintSummary": {
         "properties": {
           "stint_id": {
@@ -2787,6 +3495,14 @@
       },
       "ThresholdRow": {
         "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "stint_lap_5",
+              "all"
+            ],
+            "title": "Decision"
+          },
           "threshold_s": {
             "type": "number",
             "title": "Threshold S"
@@ -2796,7 +3512,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },
@@ -2811,9 +3528,36 @@
             ],
             "title": "Mae Laps"
           },
+          "bias_laps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bias Laps"
+          },
           "n_uncensored": {
             "type": "integer",
             "title": "N Uncensored"
+          },
+          "n_censored": {
+            "type": "integer",
+            "title": "N Censored"
+          },
+          "censored_consistency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Censored Consistency",
+            "description": "Share of censored stints where the predicted life reaches the stint end"
           },
           "n_total": {
             "type": "integer",
@@ -2823,10 +3567,14 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "decision",
           "threshold_s",
           "model",
           "mae_laps",
+          "bias_laps",
           "n_uncensored",
+          "n_censored",
+          "censored_consistency",
           "n_total"
         ],
         "title": "ThresholdRow"
@@ -2850,7 +3598,8 @@
             "enum": [
               "baseline_curve",
               "poly_ridge",
-              "hgb"
+              "hgb",
+              "lstm"
             ],
             "title": "Model"
           },

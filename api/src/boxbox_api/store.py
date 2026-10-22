@@ -1,6 +1,7 @@
 """Read-only artifact store loaded once at startup, plus request-time lookups."""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,7 +10,10 @@ import pandas as pd
 
 from boxbox.config import PROFILES, Config, Profile
 from boxbox.export.artifacts import MODEL_FILE_SUFFIX, SCHEMA_VERSION
-from boxbox.models.types import PaceModel
+from boxbox.features.tyre_prior import prior_from_summary
+from boxbox.models.forecaster import Forecaster, bind_sequence_model
+from boxbox.models.lstm import META_FILE, WEIGHTS_FILE, load_lstm
+from boxbox.models.quantile import QuantileHgb
 from boxbox.schema import MODEL_NAMES, ModelName
 from boxbox.strategy.pit_loss import PitLossEstimate
 from boxbox.strategy.uncertainty import SigmaCurve
@@ -32,9 +36,10 @@ class ProfileStore:
     profile: Profile
     manifest: JsonObject
     config: Config
-    models: dict[ModelName, PaceModel]
+    models: dict[ModelName, Forecaster]
     model_meta: dict[ModelName, JsonObject]
     selected_model: ModelName
+    strategy_selected_model: ModelName
     laps: pd.DataFrame
     curves: pd.DataFrame
     metrics: JsonObject
@@ -45,6 +50,15 @@ class ProfileStore:
     sigma: dict[ModelName, SigmaCurve]
     pit_loss: PitLossEstimate
     races: list[JsonObject]
+    strategy_sigma: dict[ModelName, SigmaCurve] | None = None
+    calibrated_margin_sigma: float | None = None
+    hgb_quantile: QuantileHgb | None = None
+
+    def window_sigma(self, name: ModelName) -> SigmaCurve:
+        """Paired (branch-difference) error curve for pit windows, else the raw curve."""
+        if self.strategy_sigma is not None and name in self.strategy_sigma:
+            return self.strategy_sigma[name]
+        return self.sigma[name]
 
 
 @dataclass(frozen=True)
@@ -99,14 +113,11 @@ def _load_profile(profile_dir: Path, profile: Profile) -> ProfileStore:
             raise ArtifactError(f"{profile}: {relative} not listed in manifest")
         return profile_dir / relative
 
-    models: dict[ModelName, PaceModel] = {}
-    meta: dict[ModelName, JsonObject] = {}
-    for entry in _list(manifest.get("models")):
-        info = _object(entry, "model entry")
-        name = _model_name(info["name"])
-        models[name] = joblib.load(path(f"models/{name}{MODEL_FILE_SUFFIX}"))
-        meta[name] = info
+    laps = pd.read_parquet(path("data/laps.parquet"))
+    models, meta, quantile = load_models(manifest, path, laps)
     sigma_raw = _object(manifest.get("sigma"), "sigma")
+    paired_raw = manifest.get("sigma_paired")
+    margin = manifest.get("calibrated_margin_sigma")
     pit_loss = _object(manifest.get("pit_loss"), "pit_loss")
     return ProfileStore(
         profile=profile,
@@ -115,7 +126,11 @@ def _load_profile(profile_dir: Path, profile: Profile) -> ProfileStore:
         models=models,
         model_meta=meta,
         selected_model=_model_name(manifest["selected_model"]),
-        laps=pd.read_parquet(path("data/laps.parquet")),
+        # Artifacts written before strategy selection existed fall back to the selected model.
+        strategy_selected_model=_model_name(
+            manifest.get("strategy_selected_model", manifest["selected_model"])
+        ),
+        laps=laps,
         curves=pd.read_parquet(path("data/degradation_curves.parquet")),
         metrics=_object(json.loads(path("eval/metrics.json").read_text()), "metrics"),
         predictions=pd.read_parquet(path("eval/predictions.parquet")),
@@ -130,7 +145,43 @@ def _load_profile(profile_dir: Path, profile: Profile) -> ProfileStore:
             int(str(pit_loss["n_stops"])),
         ),
         races=[_object(r, "race") for r in _list(manifest.get("races"))],
+        strategy_sigma=None
+        if paired_raw is None
+        else {
+            _model_name(k): _sigma(_object(v, "sigma"))
+            for k, v in _object(paired_raw, "sigma_paired").items()
+        },
+        calibrated_margin_sigma=float(str(margin)) if margin is not None else None,
+        hgb_quantile=quantile,
     )
+
+
+def load_models(
+    manifest: JsonObject, path: Callable[[str], Path], laps: pd.DataFrame
+) -> tuple[dict[ModelName, Forecaster], dict[ModelName, JsonObject], QuantileHgb | None]:
+    """Models listed in the manifest, their info entries and the optional HGB quantiles.
+
+    The LSTM is rebuilt from ``lstm.pt`` + ``lstm.meta.json`` and bound to ``laps`` (its lap
+    histories) and the manifest's tyre prior (its beyond-horizon continuation). ``path``
+    resolves a manifest-listed relative path (and rejects anything else).
+    """
+    models: dict[ModelName, Forecaster] = {}
+    meta: dict[ModelName, JsonObject] = {}
+    for entry in _list(manifest.get("models")):
+        info = _object(entry, "model entry")
+        name = _model_name(info["name"])
+        if name == "lstm":
+            weights, _ = path(f"models/{WEIGHTS_FILE}"), path(f"models/{META_FILE}")
+            prior = prior_from_summary(_object(manifest.get("tyre_prior"), "tyre_prior"))
+            models[name] = bind_sequence_model(load_lstm(weights.parent), laps, prior)
+        else:
+            models[name] = joblib.load(path(f"models/{name}{MODEL_FILE_SUFFIX}"))
+        meta[name] = info
+    quantile_file = manifest.get("hgb_quantile_file")
+    quantile = joblib.load(path(str(quantile_file))) if quantile_file else None
+    if quantile is not None and not isinstance(quantile, QuantileHgb):
+        raise ArtifactError(f"{quantile_file} is not a quantile HGB model")
+    return models, meta, quantile
 
 
 def load_store(artifacts_dir: Path, default_profile: Profile) -> Store:
@@ -185,9 +236,11 @@ def lap_state(store: ProfileStore, race_id: str, driver_id: str, lap: int) -> pd
     return state
 
 
-def resolve_model(store: ProfileStore, name: ModelName | None) -> tuple[ModelName, PaceModel]:
-    """Requested model or the profile's selected model."""
-    key = name or store.selected_model
+def resolve_model(
+    store: ProfileStore, name: ModelName | None, for_strategy: bool = False
+) -> tuple[ModelName, Forecaster]:
+    """Requested model, else the strategy-selected (``for_strategy``) or the selected model."""
+    key = name or (store.strategy_selected_model if for_strategy else store.selected_model)
     if key not in store.models:
         raise NotFoundError(f"model '{key}' not available")
     return key, store.models[key]

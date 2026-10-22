@@ -29,6 +29,7 @@ def health(store: StoreDep) -> Health:
         profiles=sorted(store.profiles),
         default_profile=store.default_profile,
         selected_model=default.selected_model,
+        strategy_selected_model=default.strategy_selected_model,
     )
 
 
@@ -45,6 +46,7 @@ def profiles(store: StoreDep) -> list[ProfileInfo]:
                 config_hash=str(profile.manifest["config_hash"]),
                 dataset_hash=str(profile.manifest["dataset_hash"]),
                 selected_model=profile.selected_model,
+                strategy_selected_model=profile.strategy_selected_model,
                 train_seasons=list(splits.train),
                 val_seasons=list(splits.val),
                 test_seasons=list(splits.test),
@@ -123,5 +125,10 @@ def laps(race_id: str, driver_id: str, store: ProfileDep) -> list[LapRecord]:
 
 @router.get("/models")
 def models(store: ProfileDep) -> list[ModelInfo]:
-    """Models with features, held-out MAE and interpretable parameters."""
-    return [ModelInfo.model_validate(meta) for meta in store.model_meta.values()]
+    """Models with features, held-out MAE, interpretable parameters and selection flags."""
+    return [
+        ModelInfo.model_validate(
+            meta | {"selected_for_strategy": name == store.strategy_selected_model}
+        )
+        for name, meta in store.model_meta.items()
+    ]

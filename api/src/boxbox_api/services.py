@@ -3,8 +3,11 @@
 import math
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
+from boxbox.models.forecaster import Forecaster, SequenceForecaster
+from boxbox.models.quantile import interval_offsets
 from boxbox.schema import DRY_COMPOUNDS, Compound, ModelName
 from boxbox.strategy.explain import decompose_next_lap, explanation_lines
 from boxbox.strategy.pit_window import (
@@ -15,7 +18,8 @@ from boxbox.strategy.pit_window import (
     evaluate_pit_window,
 )
 from boxbox.strategy.remaining_life import remaining_competitive_laps, tyre_delta_curve
-from boxbox.strategy.rollout import stay_out_rollout
+from boxbox.strategy.rollout import stay_out_design, stay_out_rollout
+from boxbox.strategy.uncertainty import SigmaCurve
 from boxbox_api.schemas import (
     Assumptions,
     CounterfactualRequest,
@@ -23,16 +27,19 @@ from boxbox_api.schemas import (
     DecompositionOut,
     Degradation,
     Interval,
+    IntervalMethod,
     LapWindow,
     PitCandidateOut,
     PitWindowRequest,
     PitWindowResponse,
+    PlannedStopOut,
     RemainingLifeOut,
     TyreState,
 )
 from boxbox_api.store import ProfileStore, driver_laps, lap_state, resolve_model
 
 NEXT_LAPS = 5
+FloatArray = npt.NDArray[np.float64]
 
 
 class OutOfRangeError(ValueError):
@@ -70,6 +77,7 @@ def _inputs(
     pit_loss_s: float | None,
     warmup_s: float | None,
 ) -> StrategyInputs:
+    """Inputs for one decision; a requested replacement compound is forced at the first stop."""
     laps = driver_laps(store, str(state["race_id"]), str(state["driver_id"]))
     chosen, feasible = choose_replacement(laps, int(state["lap"]))
     cfg = store.config
@@ -78,9 +86,35 @@ def _inputs(
         stay_out_feasible=feasible,
         pit_loss_s=pit_loss_s if pit_loss_s is not None else store.pit_loss.median_s,
         warmup_s=warmup_s if warmup_s is not None else cfg.warmup_effect_s,
-        margin_sigma=cfg.window_margin_sigma,
+        margin_sigma=margin_sigma(store),
         fuel_s_per_lap=cfg.fuel_s_per_lap,
+        compound_policy="free" if replacement is None else "fixed_first",
     )
+
+
+def margin_sigma(store: ProfileStore) -> float:
+    """Validation-calibrated window margin multiplier, else the configured one."""
+    if store.calibrated_margin_sigma is not None:
+        return store.calibrated_margin_sigma
+    return store.config.window_margin_sigma
+
+
+def forecast_offsets(
+    store: ProfileStore, model: Forecaster, sigma: SigmaCurve, state: pd.Series, end_lap: int
+) -> tuple[FloatArray, FloatArray, IntervalMethod]:
+    """Lower/upper offsets (s) of the 80% interval for laps t+1..end_lap of the stay-out run.
+
+    HGB uses its quantile companions (centred on the served prediction); every other model
+    ±z x the validation sigma of a k-lap-ahead error.
+    """
+    design = stay_out_design(state, end_lap)
+    quantile = store.hgb_quantile
+    if quantile is not None and not isinstance(model, SequenceForecaster) and model.name == "hgb":
+        lo, hi = interval_offsets(model, quantile, design)
+        return lo, hi, "quantile"
+    z = store.config.next_lap_interval_z
+    half = np.array([z * sigma.lap_sigma(k) for k in range(1, len(design) + 1)])
+    return -half, half, "sigma"
 
 
 def tyre_state(
@@ -92,18 +126,20 @@ def tyre_state(
     state = _decision(store, race_id, driver_id, lap)
     total_laps = int(state["total_laps"])
     sigma = store.sigma[name]
-    rollout = stay_out_rollout(model, state, min(total_laps, lap + NEXT_LAPS), cfg.fuel_s_per_lap)
-    z = cfg.next_lap_interval_z
+    end_lap = min(total_laps, lap + NEXT_LAPS)
+    rollout = stay_out_rollout(model, state, end_lap, cfg.fuel_s_per_lap)
+    lo, hi, method = forecast_offsets(store, model, sigma, state, end_lap)
     intervals = [
         Interval(
             lap=int(lap_number),
             pred_s=float(pred),
-            lo_s=float(pred - z * sigma.lap_sigma(k)),
-            hi_s=float(pred + z * sigma.lap_sigma(k)),
+            lo_s=float(pred + low),
+            hi_s=float(pred + high),
             extrapolated=bool(extrapolated),
+            method=method,
         )
-        for k, (lap_number, pred, extrapolated) in enumerate(
-            zip(rollout.laps, rollout.lap_time_s, rollout.extrapolated, strict=True), start=1
+        for lap_number, pred, low, high, extrapolated in zip(
+            rollout.laps, rollout.lap_time_s, lo, hi, rollout.extrapolated, strict=True
         )
     ]
     life = remaining_competitive_laps(
@@ -112,7 +148,9 @@ def tyre_state(
     delta = tyre_delta_curve(model, state, min(total_laps, lap + NEXT_LAPS), cfg.reference_tyre_age)
     model_slope = float(np.mean(np.diff(delta))) if len(delta) >= 2 else 0.0
     parts = decompose_next_lap(model, state, cfg.reference_tyre_age, cfg.fuel_s_per_lap)
-    window = evaluate_pit_window(model, state, sigma, _inputs(store, state, None, None, None))
+    window = evaluate_pit_window(
+        model, state, store.window_sigma(name), _inputs(store, state, None, None, None)
+    )
     return TyreState(
         race_id=race_id,
         driver_id=driver_id,
@@ -155,13 +193,13 @@ def _window_out(result: PitWindowResult) -> LapWindow | None:
 
 def pit_window(store: ProfileStore, request: PitWindowRequest) -> PitWindowResponse:
     """Candidate pit-lap cost curve and recommended window."""
-    name, model = resolve_model(store, request.model)
+    name, model = resolve_model(store, request.model, for_strategy=True)
     cfg = store.config
     state = _decision(store, request.race_id, request.driver_id, request.lap)
     inputs = _inputs(
         store, state, request.replacement_compound, request.pit_loss_s, request.warmup_s
     )
-    result = evaluate_pit_window(model, state, store.sigma[name], inputs)
+    result = evaluate_pit_window(model, state, store.window_sigma(name), inputs)
     threshold = request.threshold_s or cfg.competitive_threshold_s
     life = remaining_competitive_laps(
         model, state, threshold, cfg.reference_tyre_age, cfg.fuel_s_per_lap
@@ -178,12 +216,14 @@ def pit_window(store: ProfileStore, request: PitWindowRequest) -> PitWindowRespo
                 advantage_s=c.advantage_s,
                 margin_s=c.margin_s,
                 in_window=c.in_window,
+                laps_past_cap=c.laps_past_cap,
                 extrapolated=c.extrapolated,
             )
             for c in result.candidates
         ],
         window=_window_out(result),
         optimal_lap=result.optimal_lap,
+        plan=[PlannedStopOut(lap=stop.lap, compound=stop.compound) for stop in result.plan],
         stay_out_feasible=result.stay_out_feasible,
         replacement_compound=result.replacement_compound,
         pit_loss_s=result.pit_loss_s,
@@ -194,9 +234,12 @@ def pit_window(store: ProfileStore, request: PitWindowRequest) -> PitWindowRespo
             warmup_s=inputs.warmup_s,
             fuel_s_per_lap=inputs.fuel_s_per_lap,
             margin_sigma=inputs.margin_sigma,
+            margin_source="calibrated" if store.calibrated_margin_sigma is not None else "config",
             threshold_s=threshold,
             reference_tyre_age=cfg.reference_tyre_age,
-            replacement_rule="actual next compound, else hardest unused dry compound",
+            replacement_rule="requested compound at the first stop"
+            if request.replacement_compound is not None
+            else "cheapest dry compound per stint (two-compound rule enforced)",
         ),
         explanation=explanation_lines(state, parts, life, result, cfg.reference_tyre_age),
     )
@@ -206,7 +249,7 @@ def counterfactual_response(
     store: ProfileStore, request: CounterfactualRequest
 ) -> CounterfactualResponse:
     """Stay-out vs pit-at-``pit_lap`` trajectories next to the actual lap times."""
-    _, model = resolve_model(store, request.model)
+    _, model = resolve_model(store, request.model, for_strategy=True)
     state = _decision(store, request.race_id, request.driver_id, request.lap)
     if not request.lap < request.pit_lap < int(state["total_laps"]):
         raise OutOfRangeError("pit_lap must be after the decision lap and before the final lap")

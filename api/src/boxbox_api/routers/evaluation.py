@@ -35,10 +35,22 @@ METRIC_KEYS = (
     "stint_verification",
     "pit_timing_in_window_rate",
 )
+# Added by later pipeline versions; older artifacts fall back to these defaults.
+OPTIONAL_METRIC_DEFAULTS: dict[str, object] = {
+    "pit_timing_summary": {},
+    "normalisation_sensitivity": [],
+    "calibrated_margin_sigma": None,
+    "window_target_coverage": None,
+    "margin_calibration": [],
+    "interval_coverage": [],
+    "sequence_cell_comparison": [],
+    "pit_timing_by_model": [],
+}
 
 
 def _profile_metrics(store: ProfileStore) -> ProfileMetrics:
     payload = {key: store.metrics[key] for key in METRIC_KEYS}
+    payload |= {k: store.metrics.get(k, v) for k, v in OPTIONAL_METRIC_DEFAULTS.items()}
     payload["train_races"] = len(store.config.splits.train)
     return ProfileMetrics.model_validate(payload)
 
@@ -91,7 +103,7 @@ def errors(
 
 @router.get("/evaluation/threshold-sensitivity")
 def threshold_sensitivity(store: ProfileDep) -> list[ThresholdRow]:
-    """Remaining-life MAE (laps) for each competitive threshold and model."""
+    """Remaining-life MAE/bias (laps) per decision mode, competitive threshold and model."""
     return [ThresholdRow.model_validate(r) for r in records(store.threshold_sensitivity)]
 
 
