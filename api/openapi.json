@@ -2155,6 +2155,24 @@
             "type": "boolean",
             "title": "Selected For Strategy"
           },
+          "strategy_eligible": {
+            "type": "boolean",
+            "title": "Strategy Eligible",
+            "description": "False: forecast only, no pit windows from this model",
+            "default": true
+          },
+          "strategy_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Note",
+            "description": "Why the model failed the validation strategy gate"
+          },
           "coefficients": {
             "anyOf": [
               {

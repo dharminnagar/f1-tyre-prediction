@@ -125,7 +125,7 @@ def tiny_lstm(
     features: pd.DataFrame, rows: pd.DataFrame, cfg: Config, prior: TyrePrior
 ) -> TrainedLstm:
     """A few-epoch sequence model on the synthetic training race (fast, not accurate)."""
-    return train_lstm(features, TINY_LSTM, sequence_clip(rows, cfg, prior, TINY_LSTM))
+    return train_lstm(features, TINY_LSTM, sequence_clip(rows, cfg, prior, TINY_LSTM), prior)
 
 
 @pytest.fixture(scope="session")

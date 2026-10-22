@@ -733,6 +733,17 @@ export interface components {
             selected: boolean;
             /** Selected For Strategy */
             selected_for_strategy: boolean;
+            /**
+             * Strategy Eligible
+             * @description False: forecast only, no pit windows from this model
+             * @default true
+             */
+            strategy_eligible: boolean;
+            /**
+             * Strategy Note
+             * @description Why the model failed the validation strategy gate
+             */
+            strategy_note?: string | null;
             /** Coefficients */
             coefficients: {
                 [key: string]: number;

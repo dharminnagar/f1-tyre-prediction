@@ -94,6 +94,12 @@ class ModelInfo(ApiModel):
     features: list[str]
     selected: bool
     selected_for_strategy: bool
+    strategy_eligible: bool = Field(
+        default=True, description="False: forecast only, no pit windows from this model"
+    )
+    strategy_note: str | None = Field(
+        default=None, description="Why the model failed the validation strategy gate"
+    )
     coefficients: dict[str, float] | None
     importances: dict[str, float] | None
     val_mae_s: float | None

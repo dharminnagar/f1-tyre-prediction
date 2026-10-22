@@ -93,6 +93,7 @@ export function Selectors({
             <option key={m.name} value={m.name}>
               {modelLabel(m.name)}
               {m.selected_for_strategy ? " (strategy pick)" : ""}
+              {m.strategy_eligible ? "" : " (forecast only)"}
               {m.selected ? " (best next-lap)" : ""}
             </option>
           ))}

@@ -153,8 +153,12 @@ def tyre_state(
     delta = tyre_delta_curve(model, state, min(total_laps, lap + NEXT_LAPS), cfg.reference_tyre_age)
     model_slope = float(np.mean(np.diff(delta))) if len(delta) >= 2 else 0.0
     parts = decompose_next_lap(model, state, cfg.reference_tyre_age, cfg.fuel_s_per_lap)
-    window = evaluate_pit_window(
-        model, state, store.window_sigma(name), _inputs(store, state, None, None, None)
+    window = (
+        None
+        if store.strategy_note(name) is not None
+        else evaluate_pit_window(
+            model, state, store.window_sigma(name), _inputs(store, state, None, None, None)
+        )
     )
     return TyreState(
         race_id=race_id,
@@ -199,6 +203,9 @@ def _window_out(result: PitWindowResult) -> LapWindow | None:
 def pit_window(store: ProfileStore, request: PitWindowRequest) -> PitWindowResponse:
     """Candidate pit-lap cost curve and recommended window."""
     name, model = resolve_model(store, request.model, for_strategy=True)
+    note = store.strategy_note(name)
+    if note is not None:
+        raise OutOfRangeError(f"model '{name}' gives no pit windows ({note})")
     cfg = store.config
     state = _decision(store, request.race_id, request.driver_id, request.lap)
     inputs = _inputs(

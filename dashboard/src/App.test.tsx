@@ -61,6 +61,13 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "Evaluation" })).toBeInTheDocument();
   });
 
+  it("shows a forecast-only model without a pit window", async () => {
+    await renderApp("/?profile=subset&model=lstm");
+    expect(await screen.findByText(/LSTM sequence gives no pit windows \(forecast only: validation rollout slope/)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /LSTM sequence.*\(forecast only\)/ })).toBeInTheDocument();
+    expect(screen.queryByText("Lap 11–17")).not.toBeInTheDocument();
+  });
+
   it("renders the evaluation page metrics table", async () => {
     await renderApp("/evaluation?profile=subset");
     expect(await screen.findByText("Held-out accuracy (MAE, seconds)")).toBeInTheDocument();

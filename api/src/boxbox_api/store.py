@@ -62,6 +62,14 @@ class ProfileStore:
             return self.strategy_sigma[name]
         return self.sigma[name]
 
+    def strategy_note(self, name: ModelName) -> str | None:
+        """Why ``name`` is forecast only (failed the strategy gate), else ``None``."""
+        meta = self.model_meta.get(name, {})
+        if meta.get("strategy_eligible", True) is not False:
+            return None
+        note = meta.get("strategy_note")
+        return str(note) if note is not None else "forecast only"
+
     def life_noise(self, name: ModelName) -> DeltaNoise:
         """Validation-fitted remaining-life noise for ``name`` (none for older artifacts)."""
         if self.remaining_life_noise is None:

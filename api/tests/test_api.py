@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import joblib
@@ -12,7 +13,8 @@ from boxbox.models.forecaster import SequenceForecaster
 from boxbox.models.lstm import TrainedLstm, save_lstm
 from boxbox.models.quantile import predict_interval
 from boxbox.strategy.rollout import predict_segments, stay_out_design
-from boxbox_api.store import ArtifactError, ProfileStore, load_models, load_store
+from boxbox_api.main import create_app
+from boxbox_api.store import ArtifactError, ProfileStore, Store, load_models, load_store
 
 STATE = "/api/state?race_id=2024_05&driver_id=alpha&lap=8"
 WINDOW = {"race_id": "2024_05", "driver_id": "alpha", "lap": 8}
@@ -187,6 +189,32 @@ def test_lstm_serves_state_and_pit_window(client: TestClient) -> None:
         "/api/strategy/counterfactual", json={**WINDOW, "pit_lap": 12, "model": "lstm"}
     )
     assert cf.status_code == 200, cf.text
+
+
+def test_forecast_only_model_serves_state_but_no_pit_window(profile_store: ProfileStore) -> None:
+    note = "forecast only: validation rollout slope 0.050 s/lap < 0.06"
+    meta = {
+        **profile_store.model_meta,
+        "lstm": {
+            **profile_store.model_meta["lstm"],
+            "strategy_eligible": False,
+            "strategy_note": note,
+        },
+    }
+    store = Store({"subset": replace(profile_store, model_meta=meta)}, "subset")
+    with TestClient(create_app(store=store)) as client:
+        listed = {m["name"]: m for m in client.get("/api/models").json()}
+        assert listed["lstm"]["strategy_eligible"] is False
+        assert listed["lstm"]["strategy_note"] == note
+        assert listed["hgb"]["strategy_eligible"] is True
+        state = client.get(f"{STATE}&model=lstm")
+        assert state.status_code == 200, state.text
+        assert not any("pays back" in line for line in state.json()["explanation"])
+        window = client.post("/api/strategy/pit-window", json={**WINDOW, "model": "lstm"})
+        assert window.status_code == 422
+        assert note in window.json()["detail"]
+        default = client.post("/api/strategy/pit-window", json=WINDOW)
+        assert default.status_code == 200, default.text
 
 
 def test_hgb_intervals_come_from_quantile_models(client: TestClient) -> None:

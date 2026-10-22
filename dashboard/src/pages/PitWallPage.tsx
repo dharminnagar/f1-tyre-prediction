@@ -18,7 +18,7 @@ import { WhyPanel } from "../components/explain/WhyPanel";
 import { KpiTiles } from "../components/kpi/KpiTiles";
 import { Selectors } from "../components/selectors/Selectors";
 import { Card, Field, inputClass, StatusMessage } from "../components/ui";
-import { formatDelta } from "../lib/format";
+import { formatDelta, modelLabel } from "../lib/format";
 import { useSelection } from "../lib/selection";
 import { defaultLap, planLabel } from "../lib/transform";
 
@@ -37,6 +37,8 @@ export function PitWallPage({ profile }: { profile: Profile }) {
   // Strategy views default to the model with the best multi-lap (not next-lap) accuracy.
   const strategyModel = models.data?.find((m) => m.selected_for_strategy)?.name;
   const model = selection.model ?? strategyModel;
+  // A model that failed the validation strategy gate still forecasts but gives no pit windows.
+  const forecastOnly = models.data?.find((m) => m.name === model && !m.strategy_eligible);
 
   const decision =
     raceId !== undefined && driverId !== undefined && laps.data !== undefined && models.data !== undefined
@@ -44,20 +46,23 @@ export function PitWallPage({ profile }: { profile: Profile }) {
       : undefined;
   const state = useTyreState(decision);
   const pitWindow = usePitWindow(
-    decision && {
-      race_id: decision.raceId,
-      driver_id: decision.driverId,
-      lap,
-      model: model ?? null,
-      profile,
-    },
+    decision && forecastOnly === undefined
+      ? {
+          race_id: decision.raceId,
+          driver_id: decision.driverId,
+          lap,
+          model: model ?? null,
+          profile,
+        }
+      : undefined,
   );
 
   const [pitLapOverride, setPitLapOverride] = useState<number | undefined>(undefined);
-  const optimal = pitWindow.data?.optimal_lap ?? undefined;
+  const windowData = forecastOnly === undefined ? pitWindow.data : undefined;
+  const optimal = windowData?.optimal_lap ?? undefined;
   const pitLap = Math.min(Math.max(pitLapOverride ?? optimal ?? lap + 1, lap + 1), totalLaps - 1);
   // The counterfactual fits the set the optimal plan chooses at its first stop.
-  const planCompound = pitWindow.data?.plan[0]?.compound ?? null;
+  const planCompound = windowData?.plan[0]?.compound ?? null;
   const counterfactual = useCounterfactual(
     decision && pitLap > lap && pitLap < totalLaps
       ? {
@@ -96,7 +101,7 @@ export function PitWallPage({ profile }: { profile: Profile }) {
       </Card>
 
       {state.data ? (
-        <KpiTiles state={state.data} window={pitWindow.data} />
+        <KpiTiles state={state.data} window={windowData} />
       ) : (
         <Card>
           <StatusMessage loading={state.isPending && decision !== undefined} error={state.error} />
@@ -124,19 +129,23 @@ export function PitWallPage({ profile }: { profile: Profile }) {
         <Card
           title="Pit cost curve"
           subtitle={
-            pitWindow.data
-              ? `Seconds lost vs the best pit lap · first stop on ${pitWindow.data.replacement_compound} · pit loss ${pitWindow.data.pit_loss_s.toFixed(1)} s${pitWindow.data.stay_out_feasible ? "" : " · must stop (two-compound rule)"}`
+            windowData
+              ? `Seconds lost vs the best pit lap · first stop on ${windowData.replacement_compound} · pit loss ${windowData.pit_loss_s.toFixed(1)} s${windowData.stay_out_feasible ? "" : " · must stop (two-compound rule)"}`
               : "Seconds lost vs the best pit lap"
           }
         >
-          {pitWindow.data ? (
+          {forecastOnly ? (
+            <StatusMessage
+              empty={`${modelLabel(forecastOnly.name)} gives no pit windows (${forecastOnly.strategy_note ?? "forecast only"}). Pick another model for strategy.`}
+            />
+          ) : windowData ? (
             <>
-              <PitCostChart result={pitWindow.data} />
+              <PitCostChart result={windowData} />
               <p className="tabular mt-1 text-xs text-[var(--text-muted)]">
-                {pitWindow.data.plan.length > 0
-                  ? `Best plan: ${planLabel(pitWindow.data.plan)} (${pitWindow.data.plan.length} stop${pitWindow.data.plan.length > 1 ? "s" : ""} from here)`
+                {windowData.plan.length > 0
+                  ? `Best plan: ${planLabel(windowData.plan)} (${windowData.plan.length} stop${windowData.plan.length > 1 ? "s" : ""} from here)`
                   : "No pit stop left to plan."}
-                {` · margin ${pitWindow.data.assumptions.margin_sigma.toFixed(2)}σ (${pitWindow.data.assumptions.margin_source})`}
+                {` · margin ${windowData.assumptions.margin_sigma.toFixed(2)}σ (${windowData.assumptions.margin_source})`}
               </p>
             </>
           ) : (

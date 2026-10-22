@@ -77,9 +77,22 @@ export const laps: LapRecord[] = Array.from({ length: 30 }, (_, i) => {
 });
 
 export const models: ModelInfo[] = [
-  { name: "baseline_curve", features: [], selected: false, selected_for_strategy: false, coefficients: null, importances: null, val_mae_s: 0.5, test_mae_s: 0.55, tyre_age_cap: { SOFT: 25 } },
-  { name: "poly_ridge", features: [], selected: true, selected_for_strategy: true, coefficients: null, importances: null, val_mae_s: 0.46, test_mae_s: 0.5, tyre_age_cap: { SOFT: 25 } },
-  { name: "hgb", features: [], selected: false, selected_for_strategy: false, coefficients: null, importances: null, val_mae_s: 0.47, test_mae_s: 0.48, tyre_age_cap: { SOFT: 25 } },
+  { name: "baseline_curve", features: [], selected: false, selected_for_strategy: false, strategy_eligible: true, coefficients: null, importances: null, val_mae_s: 0.5, test_mae_s: 0.55, tyre_age_cap: { SOFT: 25 } },
+  { name: "poly_ridge", features: [], selected: true, selected_for_strategy: true, strategy_eligible: true, coefficients: null, importances: null, val_mae_s: 0.46, test_mae_s: 0.5, tyre_age_cap: { SOFT: 25 } },
+  { name: "hgb", features: [], selected: false, selected_for_strategy: false, strategy_eligible: true, coefficients: null, importances: null, val_mae_s: 0.47, test_mae_s: 0.48, tyre_age_cap: { SOFT: 25 } },
+  {
+    name: "lstm",
+    features: [],
+    selected: false,
+    selected_for_strategy: false,
+    strategy_eligible: false,
+    strategy_note: "forecast only: validation rollout slope 0.058 s/lap < 0.06",
+    coefficients: null,
+    importances: null,
+    val_mae_s: 0.47,
+    test_mae_s: 0.5,
+    tyre_age_cap: { SOFT: 25 },
+  },
 ];
 
 export const state: TyreState = {
