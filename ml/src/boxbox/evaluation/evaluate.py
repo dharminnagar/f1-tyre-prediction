@@ -1,7 +1,7 @@
 """Held-out evaluation of every model; test races are scored once, after selection on val."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Final, Literal
 
 import numpy as np
@@ -23,7 +23,7 @@ from boxbox.models.train import (
     training_rows,
 )
 from boxbox.models.types import FloatArray, with_categories
-from boxbox.schema import LAP_KEYS, MODEL_NAMES, ModelName
+from boxbox.schema import LAP_KEYS, MODEL_NAMES, STINT_KEYS, ModelName
 from boxbox.strategy.pit_loss import PitLossEstimate, estimate_pit_loss
 from boxbox.strategy.pit_window import (
     PitCosts,
@@ -33,9 +33,12 @@ from boxbox.strategy.pit_window import (
     window_from_costs,
 )
 from boxbox.strategy.remaining_life import (
+    NO_NOISE,
     PERSISTENCE_LAPS,
-    count_competitive,
+    DeltaNoise,
     first_persistent_exceedance,
+    fit_delta_noise,
+    noisy_competitive_count,
     tyre_delta_curve,
 )
 from boxbox.strategy.rollout import lap_times, predict_decisions, stay_out_design
@@ -62,6 +65,7 @@ class EvaluationResult:
     sigma: dict[ModelName, SigmaCurve]
     strategy_sigma: dict[ModelName, SigmaCurve]
     calibrated_margin_sigma: float
+    remaining_life_noise: dict[ModelName, DeltaNoise]
     models: FittedModels
     predictions: pd.DataFrame
     rollout_errors: pd.DataFrame
@@ -409,10 +413,10 @@ def actual_remaining_life(
     ):
         stint = stint.sort_values("lap")
         clean = stint[stint["is_clean"]]
-        early = clean[clean["stint_lap"].between(2, 4)]["y_s"]
-        if len(early) < 2:
+        reference = _early_reference(clean)
+        if reference is None:
             continue
-        excess = clean["y_s"].to_numpy(dtype=np.float64) - float(early.median())
+        excess = clean["y_s"].to_numpy(dtype=np.float64) - reference
         clean_laps = clean["lap"].to_numpy(dtype=np.int64)
         if decision == "stint_lap_5":
             laps = stint.loc[(stint["stint_lap"] == SLOPE_DECISION_STINT_LAP), "lap"]
@@ -443,6 +447,32 @@ def actual_remaining_life(
     )
 
 
+def _early_reference(clean: pd.DataFrame) -> float | None:
+    """Median relative pace of a stint's clean laps 2-4 (``None`` with fewer than two)."""
+    early = clean[clean["stint_lap"].between(2, 4)]["y_s"]
+    return float(early.median()) if len(early) >= 2 else None
+
+
+def actual_excess_curves(features: pd.DataFrame, truth: pd.DataFrame) -> list[FloatArray]:
+    """Per truth row, the excess over the stint's early reference on laps after the decision.
+
+    The curve runs to the stint's last lap and is NaN on unclean laps; it is the series
+    :func:`actual_remaining_life` searches for a crossing.
+    """
+    stints = {key: s.sort_values("lap") for key, s in features.groupby(STINT_KEYS)}
+    curves = []
+    for race_id, driver_id, stint_id, lap in truth[[*STINT_KEYS, "lap"]].itertuples(index=False):
+        stint = stints[(race_id, driver_id, stint_id)]
+        clean = stint["is_clean"].to_numpy(dtype=bool)
+        reference = _early_reference(stint[clean])
+        later = (stint["lap"] > lap).to_numpy()
+        excess = stint["y_s"].to_numpy(dtype=np.float64) - (
+            np.nan if reference is None else reference
+        )
+        curves.append(np.where(clean, excess, np.nan)[later])
+    return curves
+
+
 def remaining_life_scores(predicted: pd.Series, truth: pd.DataFrame) -> dict[str, object]:
     """MAE/bias on uncensored decisions; censored consistency = share predicted >= censor."""
     uncensored = ~truth["censored"].to_numpy(dtype=bool)
@@ -460,13 +490,80 @@ def remaining_life_scores(predicted: pd.Series, truth: pd.DataFrame) -> dict[str
     }
 
 
-def threshold_sensitivity(
+def _decision_deltas(
+    index: pd.DataFrame, truth: pd.DataFrame, model: Forecaster, cfg: Config
+) -> list[FloatArray]:
+    """Predicted tyre-delta curve to the flag at every decision lap of ``truth``."""
+    deltas = []
+    for key in map(tuple, truth[LAP_KEYS].to_numpy()):
+        state = _state(index, key)
+        deltas.append(
+            tyre_delta_curve(model, state, int(state["total_laps"]), cfg.reference_tyre_age)
+        )
+    return deltas
+
+
+def fit_remaining_life_noise(
     features: pd.DataFrame, models: Mapping[ModelName, Forecaster], cfg: Config
+) -> dict[ModelName, DeltaNoise]:
+    """Per-model :class:`DeltaNoise` fitted on the validation stints' stint-lap-5 decisions."""
+    val = features[features["split"] == "val"]
+    index = val.set_index(LAP_KEYS)
+    truth = actual_remaining_life(val, cfg.competitive_threshold_s)
+    actual = actual_excess_curves(val, truth)
+    return {
+        name: fit_delta_noise(
+            list(zip(_decision_deltas(index, truth, model, cfg), actual, strict=True))
+        )
+        for name, model in models.items()
+    }
+
+
+def remaining_life_calibration_rows(
+    features: pd.DataFrame,
+    models: Mapping[ModelName, Forecaster],
+    noise: Mapping[ModelName, DeltaNoise],
+    cfg: Config,
+) -> list[dict[str, object]]:
+    """Stint-lap-5 remaining-life scores per model and split, raw curve vs noise-aware."""
+    rows: list[dict[str, object]] = []
+    for split in ("val", "test"):
+        held = features[features["split"] == split]
+        index = held.set_index(LAP_KEYS)
+        truth = actual_remaining_life(held, cfg.competitive_threshold_s)
+        for name, model in models.items():
+            deltas = _decision_deltas(index, truth, model, cfg)
+            for calibration, applied in (("raw", NO_NOISE), ("noise", noise[name])):
+                predicted = pd.Series(
+                    [
+                        noisy_competitive_count(d, cfg.competitive_threshold_s, applied)[0]
+                        for d in deltas
+                    ],
+                    dtype=np.float64,
+                )
+                rows.append(
+                    {
+                        "model": name,
+                        "split": split,
+                        "calibration": calibration,
+                        **remaining_life_scores(predicted, truth),
+                    }
+                )
+    return rows
+
+
+def threshold_sensitivity(
+    features: pd.DataFrame,
+    models: Mapping[ModelName, Forecaster],
+    noise: Mapping[ModelName, DeltaNoise],
+    cfg: Config,
 ) -> pd.DataFrame:
     """Remaining-life accuracy (laps) per decision mode, threshold and model on val/test.
 
     Predictions keep the model's ``reference_tyre_age`` reference while the truth uses the
-    stint's own early laps.
+    stint's own early laps; each model's validation-fitted ``noise`` turns its curve into the
+    crossing the truth would measure (val is pooled with test here, see
+    :func:`remaining_life_calibration_rows` for test alone).
     """
     held = features[features["split"].isin(["val", "test"])]
     index = held.set_index(["race_id", "driver_id", "lap"])
@@ -489,7 +586,7 @@ def threshold_sensitivity(
             for threshold, truth in truths.items():
                 predicted = pd.Series(
                     [
-                        count_competitive(deltas[k], threshold)[0]
+                        noisy_competitive_count(deltas[k], threshold, noise[name])[0]
                         for k in map(tuple, truth[LAP_KEYS].to_numpy())
                     ],
                     dtype=np.float64,
@@ -1198,7 +1295,8 @@ def evaluate(
         model="hgb_deg_ablation"
     )
     loro = loro_cv(features, cfg)
-    sensitivity = threshold_sensitivity(features, models, cfg)
+    life_noise = fit_remaining_life_noise(features, models, cfg)
+    sensitivity = threshold_sensitivity(features, models, life_noise, cfg)
     stops = timed_stops(features, models[strategy_model], pit_loss.median_s, cfg)
     margin_sigma, margin_rows = calibrate_margin(
         stops, strategy_sigma[strategy_model], cfg.window_target_coverage
@@ -1249,6 +1347,10 @@ def evaluate(
         "sigma_paired": _sigma_summary(strategy_sigma),
         "calibrated_margin_sigma": margin_sigma,
         "margin_calibration": margin_rows,
+        "remaining_life_noise": {name: asdict(n) for name, n in life_noise.items()},
+        "remaining_life_calibration": remaining_life_calibration_rows(
+            features, models, life_noise, cfg
+        ),
         "window_target_coverage": cfg.window_target_coverage,
         "pit_loss": pit_loss.__dict__ | {"races": train_races},
         "stint_verification": {
@@ -1268,6 +1370,7 @@ def evaluate(
         sigma=sigma,
         strategy_sigma=strategy_sigma,
         calibrated_margin_sigma=margin_sigma,
+        remaining_life_noise=life_noise,
         models=fitted,
         predictions=predictions,
         rollout_errors=errors,

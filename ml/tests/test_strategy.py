@@ -6,7 +6,12 @@ import pandas as pd
 import pytest
 
 from boxbox.config import Config
-from boxbox.evaluation.evaluate import TimedStop, actual_remaining_life, calibrate_margin
+from boxbox.evaluation.evaluate import (
+    TimedStop,
+    actual_excess_curves,
+    actual_remaining_life,
+    calibrate_margin,
+)
 from boxbox.features.build import build_features, rollout_design
 from boxbox.models.train import fit_models_on, training_rows
 from boxbox.models.types import FloatArray, TyreAgeClip, predict_pace
@@ -23,7 +28,14 @@ from boxbox.strategy.pit_window import (
     evaluate_pit_window,
     pit_costs,
 )
-from boxbox.strategy.remaining_life import count_competitive, remaining_competitive_laps
+from boxbox.strategy.remaining_life import (
+    NO_NOISE,
+    DeltaNoise,
+    count_competitive,
+    fit_delta_noise,
+    noisy_competitive_count,
+    remaining_competitive_laps,
+)
 from boxbox.strategy.rollout import (
     new_tyre_design,
     predict_decisions,
@@ -398,6 +410,41 @@ def test_reverting_spike_is_ignored_with_persistence() -> None:
     spike = np.zeros(20)
     spike[3] = 3.0
     assert count_competitive(spike, 1.0) == (20, True)
+
+
+def test_noise_free_count_is_count_competitive_of_the_offset_curve() -> None:
+    delta = DEG * np.arange(1.0, 30.0)
+    assert noisy_competitive_count(delta, 1.05, NO_NOISE) == count_competitive(delta, 1.05)
+    shifted = DeltaNoise(offset_s=0.5, sigma_s=0.0, ar1=0.0)
+    assert noisy_competitive_count(delta, 1.05, shifted) == count_competitive(delta + 0.5, 1.05)
+
+
+def test_lap_noise_brings_the_expected_crossing_forward() -> None:
+    delta = 0.05 * np.arange(1.0, 40.0)
+    smooth, _ = count_competitive(delta, 1.0)
+    noisy, capped = noisy_competitive_count(delta, 1.0, DeltaNoise(0.0, 0.6, 0.3))
+    assert noisy < smooth
+    assert not capped
+    assert noisy_competitive_count(delta, 1.0, DeltaNoise(0.0, 0.6, 0.3))[0] == noisy
+
+
+def test_noise_fit_recovers_offset_and_spread() -> None:
+    rng = np.random.default_rng(1)
+    delta = 0.05 * np.arange(1.0, 26.0)
+    curves = [(delta, delta + 0.2 + rng.normal(0.0, 0.5, len(delta))) for _ in range(400)]
+    noise = fit_delta_noise(curves)
+    assert noise.offset_s == pytest.approx(0.2, abs=0.03)
+    assert noise.sigma_s == pytest.approx(0.5, abs=0.03)
+    assert noise.ar1 == pytest.approx(0.0, abs=0.05)
+    assert fit_delta_noise([]) == NO_NOISE
+
+
+def test_excess_curve_is_the_series_the_truth_searches() -> None:
+    stint = _stint_frame([DEG * a for a in range(1, 31)])
+    truth = actual_remaining_life(stint, 1.05, decision="stint_lap_5")
+    (curve,) = actual_excess_curves(stint, truth)
+    assert len(curve) == int(stint["lap"].max()) - int(truth["lap"].iloc[0])
+    assert count_competitive(curve, 1.05) == (8, False)
 
 
 def test_stint_lap_5_mode_has_one_row_per_stint() -> None:

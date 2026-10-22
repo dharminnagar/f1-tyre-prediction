@@ -143,7 +143,12 @@ def tyre_state(
         )
     ]
     life = remaining_competitive_laps(
-        model, state, cfg.competitive_threshold_s, cfg.reference_tyre_age, cfg.fuel_s_per_lap
+        model,
+        state,
+        cfg.competitive_threshold_s,
+        cfg.reference_tyre_age,
+        cfg.fuel_s_per_lap,
+        store.life_noise(name),
     )
     delta = tyre_delta_curve(model, state, min(total_laps, lap + NEXT_LAPS), cfg.reference_tyre_age)
     model_slope = float(np.mean(np.diff(delta))) if len(delta) >= 2 else 0.0
@@ -202,7 +207,7 @@ def pit_window(store: ProfileStore, request: PitWindowRequest) -> PitWindowRespo
     result = evaluate_pit_window(model, state, store.window_sigma(name), inputs)
     threshold = request.threshold_s or cfg.competitive_threshold_s
     life = remaining_competitive_laps(
-        model, state, threshold, cfg.reference_tyre_age, cfg.fuel_s_per_lap
+        model, state, threshold, cfg.reference_tyre_age, cfg.fuel_s_per_lap, store.life_noise(name)
     )
     parts = decompose_next_lap(model, state, cfg.reference_tyre_age, cfg.fuel_s_per_lap)
     laps = driver_laps(store, request.race_id, request.driver_id)

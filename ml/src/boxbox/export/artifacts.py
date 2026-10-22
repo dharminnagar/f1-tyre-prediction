@@ -239,6 +239,7 @@ def export_all(
         "sigma": evaluation.summary["sigma"],
         "sigma_paired": evaluation.summary["sigma_paired"],
         "calibrated_margin_sigma": evaluation.calibrated_margin_sigma,
+        "remaining_life_noise": evaluation.summary["remaining_life_noise"],
         "tyre_prior": evaluation.summary["tyre_prior"],
         "rollout_slope": evaluation.summary["rollout_slope"],
         "normalisation_sensitivity": evaluation.summary["normalisation_sensitivity"],

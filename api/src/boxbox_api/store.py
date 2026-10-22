@@ -16,6 +16,7 @@ from boxbox.models.lstm import META_FILE, WEIGHTS_FILE, load_lstm
 from boxbox.models.quantile import QuantileHgb
 from boxbox.schema import MODEL_NAMES, ModelName
 from boxbox.strategy.pit_loss import PitLossEstimate
+from boxbox.strategy.remaining_life import NO_NOISE, DeltaNoise
 from boxbox.strategy.uncertainty import SigmaCurve
 
 JsonObject = dict[str, object]
@@ -53,12 +54,19 @@ class ProfileStore:
     strategy_sigma: dict[ModelName, SigmaCurve] | None = None
     calibrated_margin_sigma: float | None = None
     hgb_quantile: QuantileHgb | None = None
+    remaining_life_noise: dict[ModelName, DeltaNoise] | None = None
 
     def window_sigma(self, name: ModelName) -> SigmaCurve:
         """Paired (branch-difference) error curve for pit windows, else the raw curve."""
         if self.strategy_sigma is not None and name in self.strategy_sigma:
             return self.strategy_sigma[name]
         return self.sigma[name]
+
+    def life_noise(self, name: ModelName) -> DeltaNoise:
+        """Validation-fitted remaining-life noise for ``name`` (none for older artifacts)."""
+        if self.remaining_life_noise is None:
+            return NO_NOISE
+        return self.remaining_life_noise.get(name, NO_NOISE)
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,12 @@ def _sigma(raw: JsonObject) -> SigmaCurve:
     return SigmaCurve(per_lap, cumulative, float(str(raw["power_a"])), float(str(raw["power_b"])))
 
 
+def _noise(raw: JsonObject) -> DeltaNoise:
+    return DeltaNoise(
+        float(str(raw["offset_s"])), float(str(raw["sigma_s"])), float(str(raw["ar1"]))
+    )
+
+
 def _load_profile(profile_dir: Path, profile: Profile) -> ProfileStore:
     manifest = _object(json.loads((profile_dir / "manifest.json").read_text()), "manifest")
     if manifest.get("schema_version") != SCHEMA_VERSION:
@@ -118,6 +132,7 @@ def _load_profile(profile_dir: Path, profile: Profile) -> ProfileStore:
     sigma_raw = _object(manifest.get("sigma"), "sigma")
     paired_raw = manifest.get("sigma_paired")
     margin = manifest.get("calibrated_margin_sigma")
+    noise_raw = manifest.get("remaining_life_noise")
     pit_loss = _object(manifest.get("pit_loss"), "pit_loss")
     return ProfileStore(
         profile=profile,
@@ -153,6 +168,12 @@ def _load_profile(profile_dir: Path, profile: Profile) -> ProfileStore:
         },
         calibrated_margin_sigma=float(str(margin)) if margin is not None else None,
         hgb_quantile=quantile,
+        remaining_life_noise=None
+        if noise_raw is None
+        else {
+            _model_name(k): _noise(_object(v, "remaining_life_noise"))
+            for k, v in _object(noise_raw, "remaining_life_noise").items()
+        },
     )
 
 
